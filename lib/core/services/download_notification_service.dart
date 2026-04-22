@@ -21,9 +21,14 @@ class DownloadNotificationService {
       '@mipmap/ic_launcher',
     );
     const iosSettings = DarwinInitializationSettings();
+    const macOSSettings = DarwinInitializationSettings();
 
     await _plugin.initialize(
-      const InitializationSettings(android: androidSettings, iOS: iosSettings),
+      const InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+        macOS: macOSSettings,
+      ),
     );
 
     final androidPlugin = _plugin

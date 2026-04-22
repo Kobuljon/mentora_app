@@ -7,7 +7,8 @@ import '../../onboarding/services/model_download_service.dart';
 
 class AiChatService {
   static const _systemInstruction =
-      'You are Mentora, a helpful English teacher for 12-16 year old students. Do not give programming-related examples in your explanations, use everyday adolescent concepts.';
+      'You are Mentora, a helpful English teacher for 12-16 year old students. '
+      'Do not give programming-related examples. Use everyday adolescent concepts.';
 
   LiteLmEngine? _engine;
   LiteLmConversation? _conversation;
@@ -21,7 +22,7 @@ class AiChatService {
     _engine = await LiteLmEngine.create(
       LiteLmEngineConfig(
         modelPath: resolvedModelPath,
-        backend: LiteLmBackend.cpu,
+        backend: LiteLmBackend.gpu,
         cacheDir: cacheDir.path,
       ),
     );
@@ -34,16 +35,30 @@ class AiChatService {
     );
   }
 
-  Stream<String> sendMessage(String text) async* {
+  Stream<String> sendMessage(String text, {String? imagePath}) async* {
     final conversation = _conversation;
     if (conversation == null) {
       throw StateError('AiChatService.initialize() must be called first.');
     }
 
-    var currentText = '';
-    await for (final chunk in conversation.sendMessageStream(text)) {
-      currentText = _mergePartialText(currentText, chunk.text);
-      yield currentText;
+    if (imagePath != null) {
+      try {
+        final response = await conversation.sendMultimodalMessage([
+          LiteLmContent.imageFile(imagePath),
+          LiteLmContent.text(
+            text.isNotEmpty ? text : 'Tell me about this image.',
+          ),
+        ]);
+        yield response.text;
+      } catch (_) {
+        yield 'Sorry, the current model does not support image input. Please use a vision-capable model or ask a text question instead.';
+      }
+    } else {
+      var fullResponse = '';
+      await for (final chunk in conversation.sendMessageStream(text)) {
+        fullResponse += chunk.text;
+        yield fullResponse;
+      }
     }
   }
 
@@ -56,13 +71,5 @@ class AiChatService {
 
   Future<String> _resolveModelPath() async {
     return ModelDownloadService.instance.getReadyModelPath();
-  }
-
-  String _mergePartialText(String previous, String incoming) {
-    if (incoming.isEmpty) return previous;
-    if (previous.isEmpty) return incoming;
-    if (incoming.startsWith(previous)) return incoming;
-    if (previous.endsWith(incoming)) return previous;
-    return '$previous$incoming';
   }
 }

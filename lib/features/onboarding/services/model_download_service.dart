@@ -88,6 +88,29 @@ class DownloadProgress {
 const _prefKeyIsModelReady = 'isModelReady';
 const _prefKeyModelPath = 'modelFilePath';
 
+class DownloadedModelInfo {
+  const DownloadedModelInfo({
+    required this.variant,
+    required this.path,
+    required this.sizeBytes,
+  });
+
+  final ModelVariant variant;
+  final String path;
+  final int sizeBytes;
+
+  String get sizeLabel {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    int i = 0;
+    double value = sizeBytes.toDouble();
+    while (value >= 1024 && i < units.length - 1) {
+      value /= 1024;
+      i++;
+    }
+    return '${value.toStringAsFixed(1)} ${units[i]}';
+  }
+}
+
 class ModelDownloadService {
   ModelDownloadService._();
 
@@ -248,6 +271,41 @@ class ModelDownloadService {
   /// Cancels an in-progress download.
   void cancelDownload() {
     _cancelToken?.cancel('User cancelled');
+  }
+
+  /// Returns info about all downloaded model variants.
+  Future<List<DownloadedModelInfo>> getDownloadedModels() async {
+    final results = <DownloadedModelInfo>[];
+    for (final variant in ModelVariant.values) {
+      final path = await _getModelFilePath(variant);
+      final file = File(path);
+      if (await file.exists()) {
+        final sizeBytes = await file.length();
+        results.add(
+          DownloadedModelInfo(
+            variant: variant,
+            path: path,
+            sizeBytes: sizeBytes,
+          ),
+        );
+      }
+    }
+    return results;
+  }
+
+  /// Deletes the downloaded file for [variant] and clears prefs if it was the active model.
+  Future<void> deleteModel(ModelVariant variant) async {
+    final path = await _getModelFilePath(variant);
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final savedPath = prefs.getString(_prefKeyModelPath);
+    if (savedPath == path) {
+      await prefs.remove(_prefKeyIsModelReady);
+      await prefs.remove(_prefKeyModelPath);
+    }
   }
 
   void _startNotificationUpdates(
