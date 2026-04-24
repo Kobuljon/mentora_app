@@ -140,6 +140,7 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: models.length,
+            // ignore: unnecessary_underscores
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (context, index) => _ModelCard(
               info: models[index],

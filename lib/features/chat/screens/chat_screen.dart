@@ -217,6 +217,7 @@ class _ChatComposer extends StatelessWidget {
                       )
                     : FilledButton(
                         onPressed: onSend,
+                        style: FilledButton.styleFrom(padding: EdgeInsets.zero),
                         child: const Icon(Icons.send_rounded),
                       ),
               ),
