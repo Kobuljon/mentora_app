@@ -58,8 +58,10 @@ dependencies:
   # System notifications for download progress
   flutter_local_notifications: ^17.2.3
   flutter_markdown: ^0.7.7+1
+  markdown: ^7.3.1
   flutter_math_fork: ^0.7.4
   image_picker: ^1.2.1
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:

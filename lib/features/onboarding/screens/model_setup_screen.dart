@@ -142,6 +142,18 @@ class _SelectionView extends StatelessWidget {
           badgeTextColor: colorScheme.onTertiaryContainer,
           onTap: () => notifier.startDownload(ModelVariant.e4b),
         ),
+        const SizedBox(height: 16),
+        _EngineCard(
+          icon: Icons.image_search_rounded,
+          title: 'Multimodal Engine',
+          subtitle: 'Text + Images',
+          description:
+              'Supports image upload. Required for vision-based features.',
+          badge: '~3 GB',
+          badgeColor: colorScheme.secondaryContainer,
+          badgeTextColor: colorScheme.onSecondaryContainer,
+          onTap: () => notifier.startDownload(ModelVariant.e2bMultimodal),
+        ),
         const Spacer(),
         Row(
           children: [

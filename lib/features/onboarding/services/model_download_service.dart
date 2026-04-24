@@ -8,7 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/services/download_notification_service.dart';
 
-enum ModelVariant { e2b, e4b }
+enum ModelVariant { e2b, e4b, e2bMultimodal }
 
 extension ModelVariantExtension on ModelVariant {
   String get url => switch (this) {
@@ -16,22 +16,34 @@ extension ModelVariantExtension on ModelVariant {
       'https://mentora-models.mesa.uz/gemma-4-E2B-it.litertlm',
     ModelVariant.e4b =>
       'https://mentora-models.mesa.uz/gemma-4-E4B-it.litertlm',
+    ModelVariant.e2bMultimodal =>
+      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
   };
 
   String get fileName => switch (this) {
     ModelVariant.e2b => 'gemma-4-E2B-it.litertlm',
     ModelVariant.e4b => 'gemma-4-E4B-it.litertlm',
+    ModelVariant.e2bMultimodal => 'gemma-4-E2B-it-multimodal.litertlm',
   };
 
   String get displayName => switch (this) {
     ModelVariant.e2b => 'Standard Engine (Gemma 4 E2B)',
     ModelVariant.e4b => 'Advanced Engine (Gemma 4 E4B)',
+    ModelVariant.e2bMultimodal => 'Multimodal Engine (Gemma 4 E2B + Vision)',
+  };
+
+  String get description => switch (this) {
+    ModelVariant.e2b => 'Text-only model. Fast and lightweight.',
+    ModelVariant.e4b => 'Larger text-only model with better reasoning.',
+    ModelVariant.e2bMultimodal =>
+      'Supports text and image input. Required for image upload features.',
   };
 
   /// Approximate size in bytes used for disk space pre-check.
   int get approximateSizeBytes => switch (this) {
     ModelVariant.e2b => 2 * 1024 * 1024 * 1024, // ~2 GB
     ModelVariant.e4b => 4 * 1024 * 1024 * 1024, // ~4 GB
+    ModelVariant.e2bMultimodal => 3 * 1024 * 1024 * 1024, // ~3 GB
   };
 }
 
@@ -159,6 +171,16 @@ class ModelDownloadService {
     return '${dir.path}/${variant.fileName}';
   }
 
+  Future<void> _markModelReady(String filePath) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefKeyIsModelReady, true);
+    await prefs.setString(_prefKeyModelPath, filePath);
+  }
+
+  bool _isLiteRtLmFile(String fileName) {
+    return fileName.toLowerCase().endsWith('.litertlm');
+  }
+
   /// Returns the number of already-downloaded bytes for a partial file, or 0.
   Future<int> _getExistingBytes(String filePath) async {
     final file = File(filePath);
@@ -242,9 +264,7 @@ class ModelDownloadService {
 
       if (_cancelToken?.isCancelled != true) {
         // Mark as complete in preferences.
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(_prefKeyIsModelReady, true);
-        await prefs.setString(_prefKeyModelPath, filePath);
+        await _markModelReady(filePath);
         _stopNotificationUpdates();
         await DownloadNotificationService.instance.showCompleted(
           title: '${variant.displayName} ready',
@@ -277,20 +297,121 @@ class ModelDownloadService {
   Future<List<DownloadedModelInfo>> getDownloadedModels() async {
     final results = <DownloadedModelInfo>[];
     for (final variant in ModelVariant.values) {
-      final path = await _getModelFilePath(variant);
-      final file = File(path);
-      if (await file.exists()) {
-        final sizeBytes = await file.length();
-        results.add(
-          DownloadedModelInfo(
-            variant: variant,
-            path: path,
-            sizeBytes: sizeBytes,
-          ),
-        );
+      final info = await getDownloadedModel(variant);
+      if (info != null) {
+        results.add(info);
       }
     }
     return results;
+  }
+
+  Future<DownloadedModelInfo?> getDownloadedModel(ModelVariant variant) async {
+    final path = await _getModelFilePath(variant);
+    final file = File(path);
+    if (!await file.exists()) return null;
+
+    return DownloadedModelInfo(
+      variant: variant,
+      path: path,
+      sizeBytes: await file.length(),
+    );
+  }
+
+  Future<DownloadedModelInfo> importModelFile({
+    required ModelVariant variant,
+    required String fileName,
+    required Stream<List<int>> bytes,
+    void Function(DownloadProgress progress)? onProgress,
+  }) async {
+    if (!_isLiteRtLmFile(fileName)) {
+      throw const FormatException('Only .litertlm model files are supported.');
+    }
+
+    final destinationPath = await _getModelFilePath(variant);
+    final destination = File(destinationPath);
+    await destination.parent.create(recursive: true);
+
+    IOSink? sink;
+    var writtenBytes = 0;
+    try {
+      if (await destination.exists()) {
+        await destination.delete();
+      }
+
+      sink = destination.openWrite(mode: FileMode.write);
+      await for (final chunk in bytes) {
+        sink.add(chunk);
+        writtenBytes += chunk.length;
+        onProgress?.call(DownloadProgress(received: writtenBytes, total: 0));
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+
+      if (writtenBytes == 0) {
+        await destination.delete();
+        throw const FormatException('The selected model file is empty.');
+      }
+
+      await _markModelReady(destinationPath);
+      return DownloadedModelInfo(
+        variant: variant,
+        path: destinationPath,
+        sizeBytes: writtenBytes,
+      );
+    } catch (_) {
+      await sink?.close();
+      if (await destination.exists()) {
+        await destination.delete();
+      }
+      rethrow;
+    }
+  }
+
+  Future<String> exportModelToDirectory({
+    required DownloadedModelInfo model,
+    required String directoryPath,
+    void Function(DownloadProgress progress)? onProgress,
+  }) async {
+    final source = File(model.path);
+    if (!await source.exists()) {
+      throw StateError('Model file was not found at ${model.path}.');
+    }
+
+    final directory = Directory(directoryPath);
+    if (!await directory.exists()) {
+      throw StateError('Export folder was not found.');
+    }
+
+    final destinationPath = '${directory.path}/${model.variant.fileName}';
+    final destination = File(destinationPath);
+    IOSink? sink;
+    var writtenBytes = 0;
+
+    try {
+      if (await destination.exists()) {
+        await destination.delete();
+      }
+
+      sink = destination.openWrite(mode: FileMode.write);
+      await for (final chunk in source.openRead()) {
+        sink.add(chunk);
+        writtenBytes += chunk.length;
+        onProgress?.call(
+          DownloadProgress(received: writtenBytes, total: model.sizeBytes),
+        );
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      return destinationPath;
+    } catch (_) {
+      await sink?.close();
+      if (await destination.exists()) {
+        await destination.delete();
+      }
+      rethrow;
+    }
   }
 
   /// Deletes the downloaded file for [variant] and clears prefs if it was the active model.
