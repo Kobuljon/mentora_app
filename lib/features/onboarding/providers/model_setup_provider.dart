@@ -86,18 +86,24 @@ class ModelSetupNotifier extends StateNotifier<ModelSetupState> {
   }
 
   Future<void> _beginDownload(ModelVariant variant) async {
-    // 2. Disk space check.
-    final freeMb = await DiskSpacePlus().getFreeDiskSpace ?? 0.0;
-    final freeBytes = (freeMb * 1024 * 1024).toInt();
-    if (freeBytes < variant.approximateSizeBytes) {
-      final needed = _formatGb(variant.approximateSizeBytes);
-      final free = _formatGb(freeBytes);
-      state = state.copyWith(
-        phase: SetupPhase.error,
-        errorMessage:
-            'Not enough storage. You need ~$needed GB free but only have $free GB available.',
-      );
-      return;
+    // 2. Disk space check (skip silently if the plugin returns null).
+    try {
+      final freeMb = await DiskSpacePlus().getFreeDiskSpace;
+      if (freeMb != null) {
+        final freeBytes = (freeMb * 1024 * 1024).toInt();
+        if (freeBytes < variant.approximateSizeBytes) {
+          final needed = _formatGb(variant.approximateSizeBytes);
+          final free = _formatGb(freeBytes);
+          state = state.copyWith(
+            phase: SetupPhase.error,
+            errorMessage:
+                'Not enough storage. You need ~$needed GB free but only have $free GB available.',
+          );
+          return;
+        }
+      }
+    } catch (_) {
+      // Disk space check is advisory; proceed if it fails.
     }
 
     state = state.copyWith(

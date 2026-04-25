@@ -23,6 +23,7 @@ class AiChatService {
       LiteLmEngineConfig(
         modelPath: resolvedModelPath,
         backend: LiteLmBackend.gpu,
+        visionBackend: LiteLmBackend.gpu,
         cacheDir: cacheDir.path,
       ),
     );

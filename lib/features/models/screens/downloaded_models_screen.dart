@@ -11,7 +11,12 @@ class DownloadedModelsScreen extends StatefulWidget {
 }
 
 class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
+  final _service = ModelDownloadService.instance;
   late Future<List<DownloadedModelInfo>> _modelsFuture;
+
+  ModelVariant? _downloadingVariant;
+  DownloadProgress? _activeProgress;
+  String? _downloadError;
 
   @override
   void initState() {
@@ -20,7 +25,7 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
   }
 
   void _reload() {
-    _modelsFuture = ModelDownloadService.instance.getDownloadedModels();
+    _modelsFuture = _service.getDownloadedModels();
   }
 
   Future<void> _confirmDelete(DownloadedModelInfo info) async {
@@ -51,20 +56,62 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
 
     if (confirmed != true || !mounted) return;
 
-    await ModelDownloadService.instance.deleteModel(info.variant);
+    await _service.deleteModel(info.variant);
     if (mounted) setState(_reload);
+  }
+
+  Future<void> _startDownload(ModelVariant variant) async {
+    setState(() {
+      _downloadingVariant = variant;
+      _activeProgress = null;
+      _downloadError = null;
+    });
+
+    await _service.downloadModel(
+      variant: variant,
+      onProgress: (p) {
+        if (mounted) setState(() => _activeProgress = p);
+      },
+      onError: (e) {
+        if (mounted) {
+          setState(() {
+            _downloadError = e.toString();
+            _downloadingVariant = null;
+            _activeProgress = null;
+          });
+        }
+      },
+    );
+
+    if (mounted) {
+      setState(() {
+        _downloadingVariant = null;
+        _activeProgress = null;
+        _reload();
+      });
+    }
+  }
+
+  void _cancelDownload() {
+    _service.cancelDownload();
+    setState(() {
+      _downloadingVariant = null;
+      _activeProgress = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Downloaded AI Models'),
+        title: const Text('AI Models'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Refresh',
-            onPressed: () => setState(_reload),
+            onPressed: _downloadingVariant != null
+                ? null
+                : () => setState(_reload),
           ),
         ],
       ),
@@ -76,76 +123,67 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
           }
 
           if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.error_outline_rounded,
-                      size: 48,
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '${snapshot.error}',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.tonal(
-                      onPressed: () => setState(_reload),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
+            return _ErrorState(
+              error: snapshot.error.toString(),
+              onRetry: () => setState(_reload),
             );
           }
 
-          final models = snapshot.data ?? [];
+          final downloaded = snapshot.data ?? [];
+          final downloadedVariants = downloaded.map((m) => m.variant).toSet();
+          final available = ModelVariant.values
+              .where((v) => !downloadedVariants.contains(v))
+              .toList();
 
-          if (models.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.inbox_rounded,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.outline,
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (downloaded.isNotEmpty) ...[
+                const _SectionHeader(title: 'DOWNLOADED'),
+                const SizedBox(height: 12),
+                for (final info in downloaded) ...[
+                  _DownloadedModelCard(
+                    info: info,
+                    onDelete: () => _confirmDelete(info),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No models downloaded yet',
-                    style: Theme.of(context).textTheme.titleMedium,
+                  const SizedBox(height: 12),
+                ],
+                const SizedBox(height: 12),
+              ],
+              if (available.isNotEmpty) ...[
+                const _SectionHeader(title: 'AVAILABLE TO DOWNLOAD'),
+                const SizedBox(height: 12),
+                for (final variant in available) ...[
+                  _AvailableModelCard(
+                    variant: variant,
+                    isDownloading: _downloadingVariant == variant,
+                    isAnyDownloading: _downloadingVariant != null,
+                    progress: _downloadingVariant == variant
+                        ? _activeProgress
+                        : null,
+                    onDownload: () => _startDownload(variant),
+                    onCancel: _cancelDownload,
                   ),
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                  const SizedBox(height: 12),
+                ],
+              ],
+              if (downloaded.isEmpty && available.isEmpty) const _EmptyState(),
+              if (_downloadError != null) ...[
+                const SizedBox(height: 12),
+                Card(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
                     child: Text(
-                      'Download a model from the home screen to use Mentora offline.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+                      'Download failed: $_downloadError',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
                       ),
                     ),
                   ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: models.length,
-            // ignore: unnecessary_underscores
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) => _ModelCard(
-              info: models[index],
-              onDelete: () => _confirmDelete(models[index]),
-            ),
+                ),
+              ],
+            ],
           );
         },
       ),
@@ -153,8 +191,25 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
   }
 }
 
-class _ModelCard extends StatelessWidget {
-  const _ModelCard({required this.info, required this.onDelete});
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+        color: Theme.of(context).colorScheme.outline,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+}
+
+class _DownloadedModelCard extends StatelessWidget {
+  const _DownloadedModelCard({required this.info, required this.onDelete});
 
   final DownloadedModelInfo info;
   final VoidCallback onDelete;
@@ -246,6 +301,186 @@ class _ModelCard extends StatelessWidget {
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AvailableModelCard extends StatelessWidget {
+  const _AvailableModelCard({
+    required this.variant,
+    required this.isDownloading,
+    required this.isAnyDownloading,
+    required this.progress,
+    required this.onDownload,
+    required this.onCancel,
+  });
+
+  final ModelVariant variant;
+  final bool isDownloading;
+  final bool isAnyDownloading;
+  final DownloadProgress? progress;
+  final VoidCallback onDownload;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final approxGb = (variant.approximateSizeBytes / (1024 * 1024 * 1024))
+        .toStringAsFixed(1);
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: colorScheme.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.cloud_download_outlined,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        variant.displayName,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      Text(
+                        '~$approxGb GB',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              variant.description,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (isDownloading) ...[
+              LinearProgressIndicator(value: progress?.fraction),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    progress == null
+                        ? 'Starting...'
+                        : '${progress!.receivedLabel} / ${progress!.totalLabel}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  if (progress?.remainingTimeLabel != null)
+                    Text(
+                      progress!.remainingTimeLabel!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.outline,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.close_rounded),
+                  label: const Text('Cancel'),
+                  onPressed: onCancel,
+                ),
+              ),
+            ] else
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('Download'),
+                  onPressed: isAnyDownloading ? null : onDownload,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 64),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.inbox_rounded,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No models available',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.error, required this.onRetry});
+
+  final String error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              size: 48,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
           ],
         ),
       ),
