@@ -28,20 +28,22 @@ class AiStudyService {
     
     final systemInstruction = "You are a helpful English teacher. Based on the provided text, generate exactly $count questions. "
         "Provide the output strictly as a JSON array of strings, surrounded by [[JSON_START]] and [[JSON_END]] markers. "
+        "IMPORTANT: Each string in the array must be separated by a comma. "
         'Example: [[JSON_START]] ["Question 1", "Question 2"] [[JSON_END]]';
         
     final conversation = await _engine!.createConversation(
       LiteLmConversationConfig(systemInstruction: systemInstruction, automaticToolCalling: false)
     );
     
-    var responseText = '';
-    await for (final chunk in conversation.sendMessageStream('Text context: $textContext')) {
-      responseText += chunk.text;
+    try {
+      var responseText = '';
+      await for (final chunk in conversation.sendMessageStream('Text context: $textContext')) {
+        responseText += chunk.text;
+      }
+      return _parseJsonArray(responseText);
+    } finally {
+      await conversation.dispose();
     }
-    
-    await conversation.dispose();
-    
-    return _parseJsonArray(responseText);
   }
   
   Future<Map<String, dynamic>> evaluateAnswers(List<String> questions, List<String> answers, bool checkGrammar) async {
@@ -79,21 +81,28 @@ class AiStudyService {
       final startIndex = text.indexOf('[[JSON_START]]');
       final endIndex = text.indexOf('[[JSON_END]]');
       
+      String jsonStr = text;
       if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-        final jsonStr = text.substring(startIndex + '[[JSON_START]]'.length, endIndex).trim();
+        jsonStr = text.substring(startIndex + '[[JSON_START]]'.length, endIndex).trim();
+      } else {
+        final s = text.indexOf('[');
+        final e = text.lastIndexOf(']');
+        if (s != -1 && e != -1 && e > s) {
+          jsonStr = text.substring(s, e + 1);
+        }
+      }
+      
+      try {
         final List<dynamic> parsed = jsonDecode(jsonStr);
         return parsed.map((e) => e.toString()).toList();
+      } catch (_) {
+        // Fallback: If AI forgot commas between array items, extract quoted strings directly
+        final exp = RegExp(r'"([^"]+)"');
+        final matches = exp.allMatches(jsonStr);
+        final list = matches.map((m) => m.group(1)!).toList();
+        if (list.isNotEmpty) return list;
+        rethrow;
       }
-      
-      // Fallback if markers are missing but standard json array is there
-      final s = text.indexOf('[');
-      final e = text.lastIndexOf(']');
-      if (s != -1 && e != -1 && e > s) {
-        final List<dynamic> parsed = jsonDecode(text.substring(s, e + 1));
-        return parsed.map((e) => e.toString()).toList();
-      }
-      
-      throw FormatException('Could not find JSON array in response');
     } catch (e) {
       throw FormatException('Failed to parse AI response: $e\\nResponse was: $text');
     }

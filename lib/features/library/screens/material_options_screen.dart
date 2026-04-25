@@ -6,6 +6,7 @@ import 'training_data_screen.dart';
 import '../../study/providers/study_provider.dart';
 import '../../study/screens/study_session_screen.dart';
 import '../../study/screens/session_result_screen.dart';
+import '../../study/screens/generate_questions_screen.dart';
 
 class MaterialOptionsScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> material;
@@ -25,83 +26,6 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
     });
   }
 
-  void _showGenerateModal() {
-    final pageFromCtrl = TextEditingController(text: '1');
-    final pageToCtrl = TextEditingController(text: '10');
-    final countCtrl = TextEditingController(text: '5');
-    final formKey = GlobalKey<FormState>();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 24,
-            right: 24,
-            top: 24,
-          ),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Generate Questions', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: pageFromCtrl,
-                        decoration: const InputDecoration(labelText: 'Page From', border: OutlineInputBorder()),
-                        keyboardType: TextInputType.number,
-                        validator: (v) => v!.isEmpty ? 'Required' : null,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextFormField(
-                        controller: pageToCtrl,
-                        decoration: const InputDecoration(labelText: 'Page To', border: OutlineInputBorder()),
-                        keyboardType: TextInputType.number,
-                        validator: (v) => v!.isEmpty ? 'Required' : null,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: countCtrl,
-                  decoration: const InputDecoration(labelText: 'Number of Questions', border: OutlineInputBorder()),
-                  keyboardType: TextInputType.number,
-                  validator: (v) => v!.isEmpty ? 'Required' : null,
-                ),
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: () {
-                    if (formKey.currentState!.validate()) {
-                      Navigator.pop(context);
-                      ref.read(studyProvider.notifier).generateQuestions(
-                        materialId: widget.material['id'],
-                        pageFrom: int.parse(pageFromCtrl.text),
-                        pageTo: int.parse(pageToCtrl.text),
-                        count: int.parse(countCtrl.text),
-                      );
-                    }
-                  },
-                  child: const Text('Generate'),
-                ),
-                const SizedBox(height: 24),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final filename = widget.material['filename'] ?? 'Unknown Material';
@@ -117,7 +41,14 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ElevatedButton.icon(
-              onPressed: studyState.isGenerating ? null : _showGenerateModal,
+              onPressed: studyState.isGenerating ? null : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => GenerateQuestionsScreen(material: widget.material),
+                  ),
+                );
+              },
               icon: studyState.isGenerating 
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.auto_awesome),

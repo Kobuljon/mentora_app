@@ -15,6 +15,8 @@ final studyProvider = StateNotifierProvider<StudyNotifier, StudyState>((ref) {
   return StudyNotifier(ref.read(aiStudyServiceProvider));
 });
 
+const _sentinel = Object();
+
 class StudyState {
   final bool isGenerating;
   final String? generatingProgress;
@@ -32,14 +34,14 @@ class StudyState {
 
   StudyState copyWith({
     bool? isGenerating,
-    String? generatingProgress,
+    Object? generatingProgress = _sentinel,
     String? error,
     List<Map<String, dynamic>>? bundles,
     Map<String, List<Map<String, dynamic>>>? sessionsByBundle,
   }) {
     return StudyState(
       isGenerating: isGenerating ?? this.isGenerating,
-      generatingProgress: generatingProgress ?? this.generatingProgress,
+      generatingProgress: identical(generatingProgress, _sentinel) ? this.generatingProgress : generatingProgress as String?,
       error: error, // Can be null to clear
       bundles: bundles ?? this.bundles,
       sessionsByBundle: sessionsByBundle ?? this.sessionsByBundle,
@@ -118,16 +120,32 @@ class StudyNotifier extends StateNotifier<StudyState> {
         int pageNum =
             chunk[DatabaseHelper.columnPageNumber] as int? ?? pageFrom;
 
-        if ((currentBatch.length + content.length) > maxCharsPerBatch &&
-            currentBatch.isNotEmpty) {
-          textBatches.add(currentBatch);
-          batchEndPages.add(currentBatchEndPage);
-          currentBatch = content; // Start new batch
-          currentBatchEndPage = pageNum;
+        // Split massive content into smaller pieces if it's too big by itself
+        List<String> subContents = [];
+        if (content.length > maxCharsPerBatch) {
+          int start = 0;
+          while (start < content.length) {
+            int end = start + maxCharsPerBatch;
+            if (end > content.length) end = content.length;
+            subContents.add(content.substring(start, end));
+            start = end;
+          }
         } else {
-          // Add spacing between chunks
-          currentBatch += currentBatch.isEmpty ? content : "\n\n$content";
-          currentBatchEndPage = pageNum;
+          subContents.add(content);
+        }
+
+        for (var subContent in subContents) {
+          if ((currentBatch.length + subContent.length) > maxCharsPerBatch &&
+              currentBatch.isNotEmpty) {
+            textBatches.add(currentBatch);
+            batchEndPages.add(currentBatchEndPage);
+            currentBatch = subContent; // Start new batch
+            currentBatchEndPage = pageNum;
+          } else {
+            // Add spacing between chunks
+            currentBatch += currentBatch.isEmpty ? subContent : "\n\n$subContent";
+            currentBatchEndPage = pageNum;
+          }
         }
       }
       if (currentBatch.isNotEmpty) {
@@ -169,22 +187,28 @@ class StudyNotifier extends StateNotifier<StudyState> {
 
         if (questionsToRequest > 0) {
           String textContext = textBatches[i];
-          // Strict truncation to guarantee we don't exceed the 4096 token limit
-          // A single large chunk from the DB might have bypassed the grouping logic
-          if (textContext.length > 8000) {
-            textContext = textContext.substring(0, 8000);
-          }
 
-          try {
-            final batchQuestions = await _aiService.generateQuestions(
-              textContext,
-              questionsToRequest,
-            );
-            allGeneratedQuestions.addAll(batchQuestions);
-          } catch (e) {
-            // If this specific batch fails (e.g. JSON parsing error), we log it and continue
-            print('Batch $i failed to generate questions: $e');
-            continue;
+          bool batchSuccess = false;
+          for (int attempt = 0; attempt < 2 && !batchSuccess; attempt++) {
+            try {
+              if (attempt > 0) {
+                state = state.copyWith(
+                  generatingProgress: 'Retrying page ${batchEndPages[i]}...',
+                );
+              }
+              final batchQuestions = await _aiService.generateQuestions(
+                textContext,
+                questionsToRequest,
+              );
+              allGeneratedQuestions.addAll(batchQuestions);
+              batchSuccess = true;
+            } catch (e) {
+              print('Batch $i on page ${batchEndPages[i]} attempt $attempt failed: $e');
+              if (attempt == 1) {
+                // Both attempts failed, skip this batch
+                print('Skipping batch $i after 2 failed attempts.');
+              }
+            }
           }
 
           // Update bundle in database incrementally
@@ -198,12 +222,21 @@ class StudyNotifier extends StateNotifier<StudyState> {
         }
       }
 
-      // 6. Final reload
+      // 6. Dispose engine to free GPU for other features
+      await _aiService.dispose();
+
+      // 7. Final reload
       await loadBundles(materialId);
+
+      if (allGeneratedQuestions.isEmpty) {
+        await DatabaseHelper.instance.deleteQuestionBundle(bundleId);
+        await loadBundles(materialId);
+        throw Exception('Failed to generate any questions. Please try again.');
+      }
     } catch (e) {
       state = state.copyWith(error: 'Failed to generate questions: $e');
     } finally {
-      state = state.copyWith(isGenerating: false);
+      state = state.copyWith(isGenerating: false, generatingProgress: null);
     }
   }
 

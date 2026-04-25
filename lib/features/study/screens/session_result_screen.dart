@@ -19,7 +19,9 @@ class SessionResultScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Session Results')),
-      body: ListView(
+      body: SafeArea(
+        bottom: true,
+        child: ListView(
         padding: const EdgeInsets.all(24),
         children: [
           Card(
@@ -92,6 +94,7 @@ class SessionResultScreen extends StatelessWidget {
             child: const Text('Finish Review'),
           )
         ],
+      ),
       ),
     );
   }
