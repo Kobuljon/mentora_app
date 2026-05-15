@@ -8,6 +8,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../../core/services/tts_service.dart';
+import '../../models/screens/downloaded_models_screen.dart';
+import '../../onboarding/services/model_download_service.dart';
+import '../../settings/providers/settings_provider.dart';
 import '../models/chat_message.dart';
 import '../providers/ai_chat_provider.dart';
 
@@ -50,6 +53,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _imagePicker = ImagePicker();
   bool _autoReadEnabled = false;
   String? _lastAutoReadMessageId;
+  String _activeLocalModelLabel = 'Local model';
 
   Future<void> _pickImage() async {
     final picked = await _imagePicker.pickImage(
@@ -65,6 +69,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void initState() {
     super.initState();
     Future.microtask(() => ref.read(aiChatProvider.notifier).initialize());
+    Future.microtask(_loadActiveModelLabel);
   }
 
   @override
@@ -77,6 +82,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(aiChatProvider);
+    final settings = ref.watch(settingsProvider);
     _scheduleScrollToBottom();
     _scheduleAutoRead(state);
 
@@ -84,7 +90,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         titleSpacing: 16,
-        title: const _ChatTitle(),
+        title: _ChatTitle(
+          modelLabel: settings.aiBackendProvider == AiBackendProvider.local
+              ? _activeLocalModelLabel
+              : settings.aiBackendProvider.label,
+          onModelTap: state.isBusy ? null : _showModelPicker,
+        ),
         actions: [
           _AutoReadToggle(
             enabled: _autoReadEnabled,
@@ -162,6 +173,51 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (ref.read(aiChatProvider).isBusy) return;
     _textController.text = prompt;
     await _handleSend();
+  }
+
+  Future<void> _loadActiveModelLabel() async {
+    try {
+      final active = await ModelDownloadService.instance.getActiveModel();
+      if (!mounted || active == null) return;
+      setState(() => _activeLocalModelLabel = active.variant.shortLabel);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _activeLocalModelLabel = 'Local model');
+    }
+  }
+
+  Future<void> _showModelPicker() async {
+    final settings = ref.read(settingsProvider);
+    final models = await ModelDownloadService.instance.getDownloadedModels();
+    if (!mounted) return;
+
+    final selected = await showModalBottomSheet<_ChatModelSelection>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) =>
+          _ModelPickerSheet(models: models, settings: settings),
+    );
+    if (selected == null || !mounted) return;
+
+    switch (selected) {
+      case _LocalModelSelection(:final model):
+        await ModelDownloadService.instance.setActiveModel(model);
+        await ref
+            .read(settingsProvider.notifier)
+            .setAiBackendProvider(AiBackendProvider.local);
+        setState(() => _activeLocalModelLabel = model.variant.shortLabel);
+        await ref.read(aiChatProvider.notifier).switchLocalModel(model.path);
+      case _CloudModelSelection(:final provider):
+        await ref
+            .read(settingsProvider.notifier)
+            .setAiBackendProvider(provider);
+        await ref.read(aiChatProvider.notifier).clearChat();
+      case _ManageModelsSelection():
+        await Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute(builder: (_) => const DownloadedModelsScreen()),
+        );
+        await _loadActiveModelLabel();
+    }
   }
 
   void _scheduleScrollToBottom() {
@@ -380,7 +436,10 @@ class _ImagePreview extends StatelessWidget {
 }
 
 class _ChatTitle extends StatelessWidget {
-  const _ChatTitle();
+  const _ChatTitle({required this.modelLabel, required this.onModelTap});
+
+  final String modelLabel;
+  final VoidCallback? onModelTap;
 
   @override
   Widget build(BuildContext context) {
@@ -422,9 +481,162 @@ class _ChatTitle extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            const SizedBox(height: 3),
+            InkWell(
+              onTap: onModelTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.tune_rounded,
+                      size: 13,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      modelLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ],
+    );
+  }
+}
+
+sealed class _ChatModelSelection {
+  const _ChatModelSelection();
+}
+
+class _LocalModelSelection extends _ChatModelSelection {
+  const _LocalModelSelection(this.model);
+
+  final DownloadedModelInfo model;
+}
+
+class _CloudModelSelection extends _ChatModelSelection {
+  const _CloudModelSelection(this.provider);
+
+  final AiBackendProvider provider;
+}
+
+class _ManageModelsSelection extends _ChatModelSelection {
+  const _ManageModelsSelection();
+}
+
+class _ModelPickerSheet extends StatelessWidget {
+  const _ModelPickerSheet({required this.models, required this.settings});
+
+  final List<DownloadedModelInfo> models;
+  final AppSettings settings;
+
+  @override
+  Widget build(BuildContext context) {
+    final cloudProviders = AiBackendProvider.values
+        .where((provider) => provider != AiBackendProvider.local)
+        .where(settings.isCloudBackendConfigured)
+        .toList();
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Switch model',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Changing models starts a clean chat.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (cloudProviders.isNotEmpty) ...[
+              const _SheetLabel('BYOK providers'),
+              for (final provider in cloudProviders)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: Text(provider.label),
+                  subtitle: Text(settings.cloudModelLabel(provider)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () =>
+                      Navigator.pop(context, _CloudModelSelection(provider)),
+                ),
+              const SizedBox(height: 8),
+            ],
+            const _SheetLabel('Local models'),
+            for (final model in models)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.memory_rounded),
+                title: Text(model.variant.displayName),
+                subtitle: Text(model.sizeLabel),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () =>
+                    Navigator.pop(context, _LocalModelSelection(model)),
+              ),
+            if (models.isEmpty)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.cloud_download_outlined),
+                title: const Text('No local models downloaded'),
+                subtitle: const Text('Download or import one'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () =>
+                    Navigator.pop(context, const _ManageModelsSelection()),
+              ),
+            if (models.isNotEmpty)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('Manage local models'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () =>
+                    Navigator.pop(context, const _ManageModelsSelection()),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetLabel extends StatelessWidget {
+  const _SheetLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 6),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }

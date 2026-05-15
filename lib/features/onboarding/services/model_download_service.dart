@@ -32,6 +32,12 @@ extension ModelVariantExtension on ModelVariant {
     ModelVariant.e2bMultimodal => 'Multimodal Engine (Gemma 4 E2B + Vision)',
   };
 
+  String get shortLabel => switch (this) {
+    ModelVariant.e2b => 'Gemma 4 E2B',
+    ModelVariant.e4b => 'Gemma 4 E4B',
+    ModelVariant.e2bMultimodal => 'Gemma 4 E2B Vision',
+  };
+
   String get description => switch (this) {
     ModelVariant.e2b => 'Text-only model. Fast and lightweight.',
     ModelVariant.e4b => 'Larger text-only model with better reasoning.',
@@ -179,6 +185,32 @@ class ModelDownloadService {
     }
 
     return path;
+  }
+
+  Future<DownloadedModelInfo?> getActiveModel() async {
+    final path = await getReadyModelPath();
+    for (final variant in ModelVariant.values) {
+      final variantPath = await _getModelFilePath(variant);
+      if (variantPath == path) {
+        return getDownloadedModel(variant);
+      }
+    }
+
+    final file = File(path);
+    if (!await file.exists()) return null;
+    return DownloadedModelInfo(
+      variant: ModelVariant.e2b,
+      path: path,
+      sizeBytes: await file.length(),
+    );
+  }
+
+  Future<void> setActiveModel(DownloadedModelInfo model) async {
+    final file = File(model.path);
+    if (!await file.exists()) {
+      throw StateError('Model file was not found at ${model.path}.');
+    }
+    await _markModelReady(model.path);
   }
 
   Future<String?> _recoverReadyModelPath() async {

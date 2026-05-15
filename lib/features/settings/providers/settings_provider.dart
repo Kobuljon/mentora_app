@@ -97,6 +97,26 @@ class AppSettings {
       geminiApiKey.trim().isNotEmpty && geminiModel.trim().isNotEmpty,
   };
 
+  bool isCloudBackendConfigured(AiBackendProvider provider) =>
+      switch (provider) {
+        AiBackendProvider.local => false,
+        AiBackendProvider.openAi =>
+          openAiApiKey.trim().isNotEmpty && openAiModel.trim().isNotEmpty,
+        AiBackendProvider.azureOpenAi =>
+          azureOpenAiEndpoint.trim().isNotEmpty &&
+              azureOpenAiApiKey.trim().isNotEmpty &&
+              azureOpenAiDeployment.trim().isNotEmpty,
+        AiBackendProvider.gemini =>
+          geminiApiKey.trim().isNotEmpty && geminiModel.trim().isNotEmpty,
+      };
+
+  String cloudModelLabel(AiBackendProvider provider) => switch (provider) {
+    AiBackendProvider.local => 'On-device',
+    AiBackendProvider.openAi => openAiModel.trim(),
+    AiBackendProvider.azureOpenAi => azureOpenAiDeployment.trim(),
+    AiBackendProvider.gemini => geminiModel.trim(),
+  };
+
   AppSettings copyWith({
     ThemeMode? themeMode,
     MentoraLanguage? language,

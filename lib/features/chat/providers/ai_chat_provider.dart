@@ -84,6 +84,28 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
     );
   }
 
+  Future<void> switchLocalModel(String modelPath) async {
+    _activeGeneration?.cancel();
+    _activeGeneration = null;
+    state = state.copyWith(
+      messages: const [],
+      isInitializing: true,
+      isSending: false,
+      clearError: true,
+    );
+
+    try {
+      await _chatService.dispose();
+      await _chatService.initialize(modelPath: modelPath);
+      state = state.copyWith(isInitializing: false, clearError: true);
+    } catch (_) {
+      state = state.copyWith(
+        isInitializing: false,
+        errorMessage: 'Unable to switch models. Try another downloaded model.',
+      );
+    }
+  }
+
   Future<void> initialize() async {
     if (state.isInitializing) return;
 
