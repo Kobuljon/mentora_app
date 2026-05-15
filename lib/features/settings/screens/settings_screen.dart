@@ -60,6 +60,60 @@ class SettingsScreen extends ConsumerWidget {
             ],
           ),
           _SettingsSection(
+            title: 'Cloud AI (BYOK)',
+            children: [
+              _SettingsTile(
+                icon: Icons.cloud_outlined,
+                title: 'AI provider',
+                subtitle: settings.aiBackendProvider == AiBackendProvider.local
+                    ? 'Use the downloaded on-device model'
+                    : settings.selectedCloudBackendConfigured
+                    ? 'Using ${settings.aiBackendProvider.label}'
+                    : '${settings.aiBackendProvider.label} needs configuration',
+                trailing: _ChoiceChipMenu<AiBackendProvider>(
+                  value: settings.aiBackendProvider,
+                  values: AiBackendProvider.values,
+                  labelFor: (value) => value.label,
+                  onSelected: notifier.setAiBackendProvider,
+                ),
+              ),
+              if (settings.aiBackendProvider == AiBackendProvider.openAi) ...[
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.key_rounded,
+                  title: 'OpenAI',
+                  subtitle:
+                      'Model: ${settings.openAiModel}; key ${_secretStatus(settings.openAiApiKey)}',
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _configureOpenAi(context, ref),
+                ),
+              ],
+              if (settings.aiBackendProvider ==
+                  AiBackendProvider.azureOpenAi) ...[
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.key_rounded,
+                  title: 'Azure OpenAI',
+                  subtitle:
+                      'Deployment: ${_emptyFallback(settings.azureOpenAiDeployment)}; key ${_secretStatus(settings.azureOpenAiApiKey)}',
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _configureAzureOpenAi(context, ref),
+                ),
+              ],
+              if (settings.aiBackendProvider == AiBackendProvider.gemini) ...[
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.key_rounded,
+                  title: 'Google Gemini',
+                  subtitle:
+                      'Model: ${settings.geminiModel}; key ${_secretStatus(settings.geminiApiKey)}',
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _configureGemini(context, ref),
+                ),
+              ],
+            ],
+          ),
+          _SettingsSection(
             title: 'For language learners',
             children: [
               _SettingsSwitchTile(
@@ -193,6 +247,175 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _secretStatus(String value) {
+    return value.trim().isEmpty ? 'not set' : 'saved';
+  }
+
+  String _emptyFallback(String value) {
+    return value.trim().isEmpty ? 'not set' : value.trim();
+  }
+
+  Future<void> _configureOpenAi(BuildContext context, WidgetRef ref) async {
+    final settings = ref.read(settingsProvider);
+    final apiKeyController = TextEditingController(text: settings.openAiApiKey);
+    final modelController = TextEditingController(text: settings.openAiModel);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('OpenAI'),
+        content: _ProviderConfigFields(
+          children: [
+            _ConfigTextField(
+              controller: apiKeyController,
+              label: 'API key',
+              obscureText: true,
+            ),
+            _ConfigTextField(controller: modelController, label: 'Model'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved == true) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setOpenAiConfig(
+            apiKey: apiKeyController.text.trim(),
+            model: modelController.text.trim(),
+          );
+    }
+    apiKeyController.dispose();
+    modelController.dispose();
+  }
+
+  Future<void> _configureAzureOpenAi(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final settings = ref.read(settingsProvider);
+    final endpointController = TextEditingController(
+      text: settings.azureOpenAiEndpoint,
+    );
+    final apiKeyController = TextEditingController(
+      text: settings.azureOpenAiApiKey,
+    );
+    final deploymentController = TextEditingController(
+      text: settings.azureOpenAiDeployment,
+    );
+    final apiVersionController = TextEditingController(
+      text: settings.azureOpenAiApiVersion,
+    );
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Azure OpenAI'),
+        content: _ProviderConfigFields(
+          children: [
+            _ConfigTextField(
+              controller: endpointController,
+              label: 'Endpoint',
+              hintText: 'https://resource.openai.azure.com',
+            ),
+            _ConfigTextField(
+              controller: apiKeyController,
+              label: 'API key',
+              obscureText: true,
+            ),
+            _ConfigTextField(
+              controller: deploymentController,
+              label: 'Deployment name',
+            ),
+            _ConfigTextField(
+              controller: apiVersionController,
+              label: 'API version',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved == true) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setAzureOpenAiConfig(
+            endpoint: endpointController.text.trim(),
+            apiKey: apiKeyController.text.trim(),
+            deployment: deploymentController.text.trim(),
+            apiVersion: apiVersionController.text.trim(),
+          );
+    }
+    endpointController.dispose();
+    apiKeyController.dispose();
+    deploymentController.dispose();
+    apiVersionController.dispose();
+  }
+
+  Future<void> _configureGemini(BuildContext context, WidgetRef ref) async {
+    final settings = ref.read(settingsProvider);
+    final apiKeyController = TextEditingController(text: settings.geminiApiKey);
+    final modelController = TextEditingController(text: settings.geminiModel);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Google Gemini'),
+        content: _ProviderConfigFields(
+          children: [
+            _ConfigTextField(
+              controller: apiKeyController,
+              label: 'API key',
+              obscureText: true,
+            ),
+            _ConfigTextField(controller: modelController, label: 'Model'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved == true) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setGeminiConfig(
+            apiKey: apiKeyController.text.trim(),
+            model: modelController.text.trim(),
+          );
+    }
+    apiKeyController.dispose();
+    modelController.dispose();
   }
 
   Future<void> _importModel(BuildContext context) async {
@@ -483,6 +706,54 @@ class SettingsScreen extends ConsumerWidget {
 }
 
 enum _ExportAction { share, copyToFolder }
+
+class _ProviderConfigFields extends StatelessWidget {
+  const _ProviderConfigFields({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 420,
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: children),
+      ),
+    );
+  }
+}
+
+class _ConfigTextField extends StatelessWidget {
+  const _ConfigTextField({
+    required this.controller,
+    required this.label,
+    this.hintText,
+    this.obscureText = false,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final String? hintText;
+  final bool obscureText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: controller,
+        obscureText: obscureText,
+        enableSuggestions: !obscureText,
+        autocorrect: false,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hintText,
+          border: const OutlineInputBorder(),
+        ),
+      ),
+    );
+  }
+}
 
 class _ExportActionOption extends StatelessWidget {
   const _ExportActionOption({

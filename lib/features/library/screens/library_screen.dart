@@ -51,9 +51,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     material[DatabaseHelper.columnType] as String? ?? 'unknown';
 
                 IconData iconData = Icons.insert_drive_file;
-                if (type == 'pdf')
+                if (type == 'pdf') {
                   iconData = Icons.picture_as_pdf;
-                else if (type == 'docx')
+                } else if (type == 'docx')
                   iconData = Icons.description;
                 else if (type == 'jpg' || type == 'png')
                   iconData = Icons.image;

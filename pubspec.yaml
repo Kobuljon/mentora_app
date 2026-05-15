@@ -2,7 +2,7 @@ name: mentora_app
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -50,7 +50,8 @@ dependencies:
   disk_space_plus: ^0.2.6
 
   # Offline on-device AI
-  flutter_litert_lm: ^0.3.0
+  flutter_litert_lm:
+    path: packages/flutter_litert_lm
 
   # Keep screen awake during download
   wakelock_plus: ^1.2.10
@@ -72,10 +73,12 @@ dependencies:
   flutter_tesseract_ocr: ^0.4.30
   pdfx: ^2.9.2
   file_selector: ^1.1.0
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.4
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -89,11 +92,12 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  assets:
+    - assets/icon/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -125,3 +129,14 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  image_path: assets/icon/logo.png
+  android: true
+  ios: true
+  web:
+    generate: true
+  macos:
+    generate: true
+  windows:
+    generate: true

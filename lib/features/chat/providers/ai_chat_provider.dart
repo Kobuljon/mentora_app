@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../settings/providers/settings_provider.dart';
 import '../models/chat_message.dart';
 import '../services/ai_chat_service.dart';
 
@@ -37,7 +38,8 @@ class AiChatState {
 }
 
 final aiChatServiceProvider = Provider<AiChatService>((ref) {
-  final service = AiChatService();
+  final settings = ref.watch(settingsProvider);
+  final service = AiChatService(settings);
   ref.onDispose(service.dispose);
   return service;
 });
@@ -45,7 +47,7 @@ final aiChatServiceProvider = Provider<AiChatService>((ref) {
 final aiChatProvider = StateNotifierProvider<AiChatNotifier, AiChatState>((
   ref,
 ) {
-  return AiChatNotifier(ref.read(aiChatServiceProvider));
+  return AiChatNotifier(ref.watch(aiChatServiceProvider));
 });
 
 class AiChatNotifier extends StateNotifier<AiChatState> {
@@ -68,6 +70,17 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         return m.isStreaming ? m.copyWith(isStreaming: false) : m;
       }).toList(),
       isSending: false,
+    );
+  }
+
+  Future<void> clearChat() async {
+    _activeGeneration?.cancel();
+    _activeGeneration = null;
+    await _chatService.resetConversation();
+    state = state.copyWith(
+      messages: const [],
+      isSending: false,
+      clearError: true,
     );
   }
 

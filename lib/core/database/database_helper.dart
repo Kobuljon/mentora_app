@@ -50,7 +50,7 @@ class DatabaseHelper {
     return _database!;
   }
 
-  _initDatabase() async {
+  Future<Database> _initDatabase() async {
     final documentsDirectory = await getApplicationDocumentsDirectory();
     final path = join(documentsDirectory.path, _databaseName);
     return await openDatabase(path,

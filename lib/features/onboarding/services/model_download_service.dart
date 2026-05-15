@@ -13,9 +13,9 @@ enum ModelVariant { e2b, e4b, e2bMultimodal }
 extension ModelVariantExtension on ModelVariant {
   String get url => switch (this) {
     ModelVariant.e2b =>
-      'https://mentora-models.mesa.uz/gemma-4-E2B-it.litertlm',
+      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
     ModelVariant.e4b =>
-      'https://mentora-models.mesa.uz/gemma-4-E4B-it.litertlm',
+      'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm',
     ModelVariant.e2bMultimodal =>
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
   };
@@ -140,12 +140,21 @@ class ModelDownloadService {
   Future<bool> isModelReady() async {
     final prefs = await SharedPreferences.getInstance();
     final isReady = prefs.getBool(_prefKeyIsModelReady) ?? false;
-    if (!isReady) return false;
-
-    // Double-check the file actually exists on disk.
     final path = prefs.getString(_prefKeyModelPath);
-    if (path == null) return false;
-    return File(path).existsSync();
+    if (isReady && path != null && File(path).existsSync()) {
+      return true;
+    }
+
+    // If preferences were reset but model files still exist, recover automatically.
+    final recoveredPath = await _recoverReadyModelPath();
+    if (recoveredPath == null) {
+      await prefs.remove(_prefKeyIsModelReady);
+      await prefs.remove(_prefKeyModelPath);
+      return false;
+    }
+
+    await _markModelReady(recoveredPath);
+    return true;
   }
 
   /// Returns the exact local path of the downloaded model file.
@@ -153,7 +162,13 @@ class ModelDownloadService {
   /// Throws if no fully-downloaded model is currently available.
   Future<String> getReadyModelPath() async {
     final prefs = await SharedPreferences.getInstance();
-    final path = prefs.getString(_prefKeyModelPath);
+    final storedPath = prefs.getString(_prefKeyModelPath);
+    final path =
+        (storedPath != null &&
+            storedPath.isNotEmpty &&
+            File(storedPath).existsSync())
+        ? storedPath
+        : await _recoverReadyModelPath();
 
     if (path == null || path.isEmpty) {
       throw StateError('No downloaded model path is available.');
@@ -164,6 +179,40 @@ class ModelDownloadService {
     }
 
     return path;
+  }
+
+  Future<String?> _recoverReadyModelPath() async {
+    // First try known variant filenames in the app documents directory.
+    for (final variant in ModelVariant.values) {
+      final variantPath = await _getModelFilePath(variant);
+      final file = File(variantPath);
+      if (await file.exists()) {
+        return variantPath;
+      }
+    }
+
+    // Fallback: pick the largest .litertlm file if one exists.
+    final dir = await getApplicationDocumentsDirectory();
+    final litertFiles = <File>[];
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is File && _isLiteRtLmFile(entity.path)) {
+        litertFiles.add(entity);
+      }
+    }
+
+    if (litertFiles.isEmpty) return null;
+
+    File best = litertFiles.first;
+    int bestSize = await best.length();
+    for (final file in litertFiles.skip(1)) {
+      final size = await file.length();
+      if (size > bestSize) {
+        best = file;
+        bestSize = size;
+      }
+    }
+
+    return best.path;
   }
 
   Future<String> _getModelFilePath(ModelVariant variant) async {

@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/material_processor_service.dart';
 import '../../chat/services/ai_chat_service.dart';
+import '../../settings/providers/settings_provider.dart';
 
-class ImportMaterialsScreen extends StatefulWidget {
+class ImportMaterialsScreen extends ConsumerStatefulWidget {
   const ImportMaterialsScreen({super.key});
 
   @override
-  State<ImportMaterialsScreen> createState() => _ImportMaterialsScreenState();
+  ConsumerState<ImportMaterialsScreen> createState() =>
+      _ImportMaterialsScreenState();
 }
 
-class _ImportMaterialsScreenState extends State<ImportMaterialsScreen> {
+class _ImportMaterialsScreenState extends ConsumerState<ImportMaterialsScreen> {
   bool _isImporting = false;
   String _importStatus = '';
   double _importProgress = 0.0;
@@ -30,7 +33,7 @@ class _ImportMaterialsScreenState extends State<ImportMaterialsScreen> {
       });
 
       // Initialize AI just for this processing step to avoid state pollution
-      final aiService = AiChatService();
+      final aiService = AiChatService(ref.read(settingsProvider));
       try {
         await aiService.initialize();
         setState(() {

@@ -33,6 +33,17 @@ enum ReaderTextSize {
   final String label;
 }
 
+enum AiBackendProvider {
+  local('Local model'),
+  openAi('OpenAI'),
+  azureOpenAi('Azure OpenAI'),
+  gemini('Google Gemini');
+
+  const AiBackendProvider(this.label);
+
+  final String label;
+}
+
 class AppSettings {
   const AppSettings({
     this.themeMode = ThemeMode.system,
@@ -43,6 +54,15 @@ class AppSettings {
     this.autoSaveNotesEnabled = true,
     this.defaultStudyView = DefaultStudyView.read,
     this.readerTextSize = ReaderTextSize.medium,
+    this.aiBackendProvider = AiBackendProvider.local,
+    this.openAiApiKey = '',
+    this.openAiModel = 'gpt-5-mini',
+    this.azureOpenAiEndpoint = '',
+    this.azureOpenAiApiKey = '',
+    this.azureOpenAiDeployment = '',
+    this.azureOpenAiApiVersion = '2024-10-21',
+    this.geminiApiKey = '',
+    this.geminiModel = 'gemini-2.5-flash',
   });
 
   final ThemeMode themeMode;
@@ -53,8 +73,29 @@ class AppSettings {
   final bool autoSaveNotesEnabled;
   final DefaultStudyView defaultStudyView;
   final ReaderTextSize readerTextSize;
+  final AiBackendProvider aiBackendProvider;
+  final String openAiApiKey;
+  final String openAiModel;
+  final String azureOpenAiEndpoint;
+  final String azureOpenAiApiKey;
+  final String azureOpenAiDeployment;
+  final String azureOpenAiApiVersion;
+  final String geminiApiKey;
+  final String geminiModel;
 
   bool get darkModeEnabled => themeMode == ThemeMode.dark;
+
+  bool get selectedCloudBackendConfigured => switch (aiBackendProvider) {
+    AiBackendProvider.local => false,
+    AiBackendProvider.openAi =>
+      openAiApiKey.trim().isNotEmpty && openAiModel.trim().isNotEmpty,
+    AiBackendProvider.azureOpenAi =>
+      azureOpenAiEndpoint.trim().isNotEmpty &&
+          azureOpenAiApiKey.trim().isNotEmpty &&
+          azureOpenAiDeployment.trim().isNotEmpty,
+    AiBackendProvider.gemini =>
+      geminiApiKey.trim().isNotEmpty && geminiModel.trim().isNotEmpty,
+  };
 
   AppSettings copyWith({
     ThemeMode? themeMode,
@@ -65,6 +106,15 @@ class AppSettings {
     bool? autoSaveNotesEnabled,
     DefaultStudyView? defaultStudyView,
     ReaderTextSize? readerTextSize,
+    AiBackendProvider? aiBackendProvider,
+    String? openAiApiKey,
+    String? openAiModel,
+    String? azureOpenAiEndpoint,
+    String? azureOpenAiApiKey,
+    String? azureOpenAiDeployment,
+    String? azureOpenAiApiVersion,
+    String? geminiApiKey,
+    String? geminiModel,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -76,6 +126,17 @@ class AppSettings {
       autoSaveNotesEnabled: autoSaveNotesEnabled ?? this.autoSaveNotesEnabled,
       defaultStudyView: defaultStudyView ?? this.defaultStudyView,
       readerTextSize: readerTextSize ?? this.readerTextSize,
+      aiBackendProvider: aiBackendProvider ?? this.aiBackendProvider,
+      openAiApiKey: openAiApiKey ?? this.openAiApiKey,
+      openAiModel: openAiModel ?? this.openAiModel,
+      azureOpenAiEndpoint: azureOpenAiEndpoint ?? this.azureOpenAiEndpoint,
+      azureOpenAiApiKey: azureOpenAiApiKey ?? this.azureOpenAiApiKey,
+      azureOpenAiDeployment:
+          azureOpenAiDeployment ?? this.azureOpenAiDeployment,
+      azureOpenAiApiVersion:
+          azureOpenAiApiVersion ?? this.azureOpenAiApiVersion,
+      geminiApiKey: geminiApiKey ?? this.geminiApiKey,
+      geminiModel: geminiModel ?? this.geminiModel,
     );
   }
 }
@@ -93,6 +154,15 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   static const _autoSaveNotesKey = 'settings.autoSaveNotesEnabled';
   static const _defaultStudyViewKey = 'settings.defaultStudyView';
   static const _readerTextSizeKey = 'settings.readerTextSize';
+  static const _aiBackendProviderKey = 'settings.aiBackendProvider';
+  static const _openAiApiKeyKey = 'settings.openAiApiKey';
+  static const _openAiModelKey = 'settings.openAiModel';
+  static const _azureOpenAiEndpointKey = 'settings.azureOpenAiEndpoint';
+  static const _azureOpenAiApiKeyKey = 'settings.azureOpenAiApiKey';
+  static const _azureOpenAiDeploymentKey = 'settings.azureOpenAiDeployment';
+  static const _azureOpenAiApiVersionKey = 'settings.azureOpenAiApiVersion';
+  static const _geminiApiKeyKey = 'settings.geminiApiKey';
+  static const _geminiModelKey = 'settings.geminiModel';
 
   Future<void> setThemeMode(ThemeMode themeMode) async {
     await _update(state.copyWith(themeMode: themeMode));
@@ -124,6 +194,40 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> setReaderTextSize(ReaderTextSize size) async {
     await _update(state.copyWith(readerTextSize: size));
+  }
+
+  Future<void> setAiBackendProvider(AiBackendProvider provider) async {
+    await _update(state.copyWith(aiBackendProvider: provider));
+  }
+
+  Future<void> setOpenAiConfig({
+    required String apiKey,
+    required String model,
+  }) async {
+    await _update(state.copyWith(openAiApiKey: apiKey, openAiModel: model));
+  }
+
+  Future<void> setAzureOpenAiConfig({
+    required String endpoint,
+    required String apiKey,
+    required String deployment,
+    required String apiVersion,
+  }) async {
+    await _update(
+      state.copyWith(
+        azureOpenAiEndpoint: endpoint,
+        azureOpenAiApiKey: apiKey,
+        azureOpenAiDeployment: deployment,
+        azureOpenAiApiVersion: apiVersion,
+      ),
+    );
+  }
+
+  Future<void> setGeminiConfig({
+    required String apiKey,
+    required String model,
+  }) async {
+    await _update(state.copyWith(geminiApiKey: apiKey, geminiModel: model));
   }
 
   Future<void> _load() async {
@@ -158,6 +262,22 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         ReaderTextSize.values,
         ReaderTextSize.medium,
       ),
+      aiBackendProvider: _readEnum(
+        preferences,
+        _aiBackendProviderKey,
+        AiBackendProvider.values,
+        AiBackendProvider.local,
+      ),
+      openAiApiKey: preferences.getString(_openAiApiKeyKey) ?? '',
+      openAiModel: preferences.getString(_openAiModelKey) ?? 'gpt-5-mini',
+      azureOpenAiEndpoint: preferences.getString(_azureOpenAiEndpointKey) ?? '',
+      azureOpenAiApiKey: preferences.getString(_azureOpenAiApiKeyKey) ?? '',
+      azureOpenAiDeployment:
+          preferences.getString(_azureOpenAiDeploymentKey) ?? '',
+      azureOpenAiApiVersion:
+          preferences.getString(_azureOpenAiApiVersionKey) ?? '2024-10-21',
+      geminiApiKey: preferences.getString(_geminiApiKeyKey) ?? '',
+      geminiModel: preferences.getString(_geminiModelKey) ?? 'gemini-2.5-flash',
     );
   }
 
@@ -176,6 +296,21 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       preferences.setBool(_autoSaveNotesKey, next.autoSaveNotesEnabled),
       preferences.setString(_defaultStudyViewKey, next.defaultStudyView.name),
       preferences.setString(_readerTextSizeKey, next.readerTextSize.name),
+      preferences.setString(_aiBackendProviderKey, next.aiBackendProvider.name),
+      preferences.setString(_openAiApiKeyKey, next.openAiApiKey),
+      preferences.setString(_openAiModelKey, next.openAiModel),
+      preferences.setString(_azureOpenAiEndpointKey, next.azureOpenAiEndpoint),
+      preferences.setString(_azureOpenAiApiKeyKey, next.azureOpenAiApiKey),
+      preferences.setString(
+        _azureOpenAiDeploymentKey,
+        next.azureOpenAiDeployment,
+      ),
+      preferences.setString(
+        _azureOpenAiApiVersionKey,
+        next.azureOpenAiApiVersion,
+      ),
+      preferences.setString(_geminiApiKeyKey, next.geminiApiKey),
+      preferences.setString(_geminiModelKey, next.geminiModel),
     ]);
   }
 

@@ -3,16 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/database_helper.dart';
+import '../../settings/providers/settings_provider.dart';
 import '../services/ai_study_service.dart';
 
 final aiStudyServiceProvider = Provider<AiStudyService>((ref) {
-  final service = AiStudyService();
+  final settings = ref.watch(settingsProvider);
+  final service = AiStudyService(settings);
   ref.onDispose(() => service.dispose());
   return service;
 });
 
 final studyProvider = StateNotifierProvider<StudyNotifier, StudyState>((ref) {
-  return StudyNotifier(ref.read(aiStudyServiceProvider));
+  return StudyNotifier(ref.watch(aiStudyServiceProvider));
 });
 
 const _sentinel = Object();
@@ -41,7 +43,9 @@ class StudyState {
   }) {
     return StudyState(
       isGenerating: isGenerating ?? this.isGenerating,
-      generatingProgress: identical(generatingProgress, _sentinel) ? this.generatingProgress : generatingProgress as String?,
+      generatingProgress: identical(generatingProgress, _sentinel)
+          ? this.generatingProgress
+          : generatingProgress as String?,
       error: error, // Can be null to clear
       bundles: bundles ?? this.bundles,
       sessionsByBundle: sessionsByBundle ?? this.sessionsByBundle,
@@ -143,7 +147,9 @@ class StudyNotifier extends StateNotifier<StudyState> {
             currentBatchEndPage = pageNum;
           } else {
             // Add spacing between chunks
-            currentBatch += currentBatch.isEmpty ? subContent : "\n\n$subContent";
+            currentBatch += currentBatch.isEmpty
+                ? subContent
+                : "\n\n$subContent";
             currentBatchEndPage = pageNum;
           }
         }
@@ -203,7 +209,9 @@ class StudyNotifier extends StateNotifier<StudyState> {
               allGeneratedQuestions.addAll(batchQuestions);
               batchSuccess = true;
             } catch (e) {
-              print('Batch $i on page ${batchEndPages[i]} attempt $attempt failed: $e');
+              print(
+                'Batch $i on page ${batchEndPages[i]} attempt $attempt failed: $e',
+              );
               if (attempt == 1) {
                 // Both attempts failed, skip this batch
                 print('Skipping batch $i after 2 failed attempts.');
