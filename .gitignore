@@ -46,3 +46,6 @@ app.*.map.json
 
 # env
 .env
+.envpackages/flutter_litert_lm/ios/Frameworks/*.xcframework
+# Ignore heavy local AI framework binaries
+packages/flutter_litert_lm/ios/Frameworks/
