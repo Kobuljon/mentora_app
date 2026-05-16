@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:mentora_app/features/chat/screens/chat_screen.dart';
 import 'package:mentora_app/features/home/screens/home_screen.dart';
 import 'package:mentora_app/features/library/screens/library_screen.dart';
-import 'package:mentora_app/features/progress/screens/progress_screen.dart';
 import 'package:mentora_app/features/settings/screens/settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -19,7 +18,6 @@ class _MainScreenState extends State<MainScreen> {
     HomeScreen(),
     ChatScreen(),
     LibraryScreen(),
-    ProgressScreen(),
     SettingsScreen(),
   ];
 
@@ -52,11 +50,6 @@ class _MainScreenState extends State<MainScreen> {
             icon: Icon(Icons.library_books_outlined),
             selectedIcon: Icon(Icons.library_books),
             label: 'Library',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Progress',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

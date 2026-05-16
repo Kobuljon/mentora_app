@@ -24,7 +24,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Future<void> _loadMaterials() async {
     setState(() => _isLoading = true);
+    await DatabaseHelper.instance.markAllProcessingMaterialsAsFailed();
     final materials = await DatabaseHelper.instance.getAllMaterials();
+    if (!mounted) return;
     setState(() {
       _materials = materials;
       _isLoading = false;

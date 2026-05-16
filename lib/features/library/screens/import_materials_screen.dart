@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/material_processor_service.dart';
-import '../../chat/services/ai_chat_service.dart';
-import '../../settings/providers/settings_provider.dart';
 
 class ImportMaterialsScreen extends ConsumerStatefulWidget {
   const ImportMaterialsScreen({super.key});
@@ -19,60 +17,129 @@ class _ImportMaterialsScreenState extends ConsumerState<ImportMaterialsScreen> {
   double _importProgress = 0.0;
 
   Future<void> _pickAndProcessFile() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
+    if (_isImporting) return;
+
+    final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'docx', 'mp3', 'm4a', 'wav', 'jpg', 'png'],
     );
 
-    if (result != null && result.files.single.path != null) {
-      final file = result.files.single;
-      setState(() {
-        _isImporting = true;
-        _importStatus = 'Preparing ${file.name}...';
-        _importProgress = 0.1;
-      });
+    if (!mounted || result == null) return;
+    final picked = result.files.single;
+    final pickedPath = picked.path;
+    if (pickedPath == null || pickedPath.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not read the selected file path. Try another file.',
+          ),
+        ),
+      );
+      return;
+    }
 
-      // Initialize AI just for this processing step to avoid state pollution
-      final aiService = AiChatService(ref.read(settingsProvider));
-      try {
-        await aiService.initialize();
-        setState(() {
-          _importStatus = 'Extracting and cleaning text...';
-        });
-        await MaterialProcessorService.instance.processFile(
-          file.path!,
-          aiService,
-          onProgress: (status, progress) {
-            if (mounted) {
-              setState(() {
-                _importStatus = status;
-                _importProgress = progress;
-              });
-            }
-          },
-        );
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error: $e')));
-        }
-      } finally {
-        await aiService.dispose();
-      }
+    final displayName = await _askForMaterialName(picked.name);
+    if (displayName == null || !mounted) return;
 
+    // Let the dialog route and IME teardown finish before mutating this page.
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+
+    setState(() {
+      _isImporting = true;
+      _importStatus = 'Preparing $displayName...';
+      _importProgress = 0.1;
+    });
+
+    var importSucceeded = false;
+    try {
+      await MaterialProcessorService.instance.processFile(
+        pickedPath,
+        displayName: displayName,
+        onProgress: (status, progress) {
+          if (!mounted) return;
+          setState(() {
+            _importStatus = status;
+            _importProgress = progress;
+          });
+        },
+      );
+      importSucceeded = true;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
+    } finally {
       if (mounted) {
         setState(() {
           _isImporting = false;
-          _importStatus = 'Import complete';
-          _importProgress = 1.0;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Materials imported successfully')),
-        );
-        Navigator.pop(context);
       }
     }
+
+    if (importSucceeded && mounted) {
+      setState(() {
+        _importStatus = 'Import complete';
+        _importProgress = 1.0;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Materials imported successfully')),
+      );
+      Navigator.pop(context);
+    }
+  }
+
+  Future<String?> _askForMaterialName(String filename) async {
+    final defaultName = filename.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    final controller = TextEditingController(text: defaultName);
+    final formKey = GlobalKey<FormState>();
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Name this material'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Material name',
+                helperText: filename,
+                border: const OutlineInputBorder(),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Enter a name';
+                }
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                Navigator.pop(dialogContext, controller.text.trim());
+              },
+              child: const Text('Import'),
+            ),
+          ],
+        );
+      },
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.dispose();
+    });
+    return result;
   }
 
   @override

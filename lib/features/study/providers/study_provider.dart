@@ -123,19 +123,25 @@ class StudyNotifier extends StateNotifier<StudyState> {
         String content = chunk[DatabaseHelper.columnContent] as String;
         int pageNum =
             chunk[DatabaseHelper.columnPageNumber] as int? ?? pageFrom;
+        final sourceType =
+            chunk[DatabaseHelper.columnSourceType] as String? ??
+            'training data';
+        final chunkIndex = chunk[DatabaseHelper.columnChunkIndex] as int? ?? 0;
+        final labeledContent =
+            '[Source: page $pageNum, chunk ${chunkIndex + 1}, $sourceType]\n$content';
 
         // Split massive content into smaller pieces if it's too big by itself
         List<String> subContents = [];
-        if (content.length > maxCharsPerBatch) {
+        if (labeledContent.length > maxCharsPerBatch) {
           int start = 0;
-          while (start < content.length) {
+          while (start < labeledContent.length) {
             int end = start + maxCharsPerBatch;
-            if (end > content.length) end = content.length;
-            subContents.add(content.substring(start, end));
+            if (end > labeledContent.length) end = labeledContent.length;
+            subContents.add(labeledContent.substring(start, end));
             start = end;
           }
         } else {
-          subContents.add(content);
+          subContents.add(labeledContent);
         }
 
         for (var subContent in subContents) {
@@ -169,6 +175,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
         'pageFrom': pageFrom,
         'pageTo': pageTo,
         'count': count,
+        'chunkCount': relevantChunks.length,
       });
 
       await DatabaseHelper.instance.insertQuestionBundle({

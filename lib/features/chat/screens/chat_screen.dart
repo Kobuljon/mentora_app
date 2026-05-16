@@ -54,6 +54,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _autoReadEnabled = false;
   String? _lastAutoReadMessageId;
   String _activeLocalModelLabel = 'Local model';
+  int _lastMessageCount = 0;
 
   Future<void> _pickImage() async {
     final picked = await _imagePicker.pickImage(
@@ -83,7 +84,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(aiChatProvider);
     final settings = ref.watch(settingsProvider);
-    _scheduleScrollToBottom();
+
+    if (_lastMessageCount != state.messages.length) {
+      _lastMessageCount = state.messages.length;
+      _scheduleScrollToBottom();
+    }
     _scheduleAutoRead(state);
 
     return Scaffold(
@@ -235,16 +240,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (!_autoReadEnabled || state.messages.isEmpty) return;
 
     final lastMessage = state.messages.last;
+    final messageId = lastMessage.id;
     if (lastMessage.author != ChatAuthor.mentor ||
         lastMessage.isStreaming ||
         lastMessage.text.trim().isEmpty ||
-        lastMessage.id == _lastAutoReadMessageId) {
+        messageId == _lastAutoReadMessageId) {
       return;
     }
 
-    _lastAutoReadMessageId = lastMessage.id;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_autoReadEnabled) return;
+      if (_lastAutoReadMessageId == messageId) return;
+      _lastAutoReadMessageId = messageId;
       TtsService.instance.speak(lastMessage.id, lastMessage.text);
     });
   }
@@ -753,15 +760,28 @@ class _ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final isUser = message.author == ChatAuthor.user;
     final alignment = isUser
         ? CrossAxisAlignment.end
         : CrossAxisAlignment.start;
+    final userBubbleColor = colorScheme.surfaceContainerHighest;
+    final userTextStyle = theme.textTheme.bodyLarge?.copyWith(
+      color: colorScheme.onSurface,
+    );
+    final assistantTextStyle = theme.textTheme.bodyLarge?.copyWith(
+      color: colorScheme.onSurface,
+    );
 
     return Column(
       crossAxisAlignment: alignment,
       children: [
-        Text(isUser ? 'You' : 'Mentora', style: theme.textTheme.labelMedium),
+        Text(
+          isUser ? 'You' : 'Mentora',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 4),
         ConstrainedBox(
           constraints: BoxConstraints(
@@ -770,7 +790,7 @@ class _ChatBubble extends StatelessWidget {
           child: Container(
             decoration: isUser
                 ? BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
+                    color: userBubbleColor,
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(22),
                       topRight: Radius.circular(22),
@@ -803,12 +823,25 @@ class _ChatBubble extends StatelessWidget {
                     const _ThinkingIndicator()
                   else if (message.text.isNotEmpty)
                     isUser
-                        ? Text(message.text, style: theme.textTheme.bodyLarge)
+                        ? Text(message.text, style: userTextStyle)
                         : MarkdownBody(
                             data: message.text,
-                            styleSheet: MarkdownStyleSheet.fromTheme(
-                              theme,
-                            ).copyWith(p: theme.textTheme.bodyLarge),
+                            styleSheet: MarkdownStyleSheet.fromTheme(theme)
+                                .copyWith(
+                                  p: assistantTextStyle,
+                                  code: theme.textTheme.bodyMedium?.copyWith(
+                                    color: colorScheme.onSurface,
+                                    backgroundColor:
+                                        colorScheme.surfaceContainerHighest,
+                                  ),
+                                  codeblockDecoration: BoxDecoration(
+                                    color: colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant,
+                                    ),
+                                  ),
+                                ),
                             inlineSyntaxes: [_MathInlineSyntax()],
                             builders: {
                               'math-inline': _MathElementBuilder(),
@@ -910,9 +943,13 @@ class _EmptyChatState extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final prompts = const [
+      'Answer from my uploaded materials: what should I review first?',
+      'Quiz me on my uploaded notes',
+      'Summarize the key ideas from my training data',
+      'Ask me 5 questions from my uploaded materials',
+      'Explain a difficult topic from my notes',
+      'Make flashcards from my uploaded lessons',
       'Help me practice past tense',
-      'Explain this word with examples',
-      'Make a short vocabulary quiz',
       'Check my sentence for grammar',
     ];
 
@@ -942,7 +979,7 @@ class _EmptyChatState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Ask about vocabulary, grammar, reading, or writing.',
+              'Ask about uploaded lessons, vocabulary, grammar, reading, or writing.',
               style: theme.textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),

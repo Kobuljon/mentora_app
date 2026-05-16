@@ -6,15 +6,19 @@ import '../../../core/services/cloud_ai_service.dart';
 import '../../../core/services/optimized_litert_engine_factory.dart';
 import '../../onboarding/services/model_download_service.dart';
 import '../../settings/providers/settings_provider.dart';
+import 'training_data_search_service.dart';
 
 class AiChatService {
   static const _systemInstruction =
       'You are Mentora, a helpful English teacher for 12-16 year old students. '
-      'Do not give programming-related examples. Use everyday adolescent concepts.';
+      'Do not give programming-related examples. Use everyday adolescent concepts. '
+      'When uploaded learning material is provided in the user message, treat it as the primary source and cite it.';
 
-  AiChatService(this._settings);
+  AiChatService(this._settings, {TrainingDataSearchService? trainingDataSearch})
+    : _trainingDataSearch = trainingDataSearch ?? TrainingDataSearchService();
 
   final AppSettings _settings;
+  final TrainingDataSearchService _trainingDataSearch;
   final List<({String role, String text})> _cloudMessages = [];
   LiteLmEngine? _engine;
   LiteLmConversation? _conversation;
@@ -39,10 +43,12 @@ class AiChatService {
   }
 
   Stream<String> sendMessage(String text, {String? imagePath}) async* {
+    final modelPrompt = await _buildModelPrompt(text, imagePath: imagePath);
+
     if (_useCloudBackend) {
       var fullResponse = '';
       await for (final partialText in _sendCloudMessageStream(
-        text,
+        modelPrompt,
         imagePath: imagePath,
       )) {
         fullResponse = partialText;
@@ -64,7 +70,7 @@ class AiChatService {
         final response = await conversation.sendMultimodalMessage([
           LiteLmContent.imageFile(imagePath),
           LiteLmContent.text(
-            text.isNotEmpty ? text : 'Tell me about this image.',
+            modelPrompt.isNotEmpty ? modelPrompt : 'Tell me about this image.',
           ),
         ]);
         yield response.text;
@@ -73,7 +79,7 @@ class AiChatService {
       }
     } else {
       var fullResponse = '';
-      await for (final chunk in conversation.sendMessageStream(text)) {
+      await for (final chunk in conversation.sendMessageStream(modelPrompt)) {
         fullResponse += chunk.text;
         yield fullResponse;
       }
@@ -103,13 +109,13 @@ class AiChatService {
       _settings.selectedCloudBackendConfigured;
 
   Stream<String> _sendCloudMessageStream(
-    String text, {
+    String modelPrompt, {
     String? imagePath,
   }) async* {
     var fullResponse = '';
     await for (final delta in CloudAiService(_settings).generateStream(
       systemInstruction: _systemInstruction,
-      prompt: _buildCloudPrompt(text),
+      prompt: _buildCloudPrompt(modelPrompt),
       imagePath: imagePath,
     )) {
       fullResponse += delta;
@@ -127,5 +133,37 @@ class AiChatService {
         .map((message) => '${message.role}: ${message.text}')
         .join('\n');
     return 'Conversation so far:\n$history\n\nUser: $text';
+  }
+
+  Future<String> _buildModelPrompt(String text, {String? imagePath}) async {
+    final query = text.trim();
+    if (query.isEmpty) return text;
+
+    final matches = await _trainingDataSearch.search(query);
+    if (matches.isEmpty) return text;
+
+    final snippets = matches.indexed
+        .map((entry) {
+          final index = entry.$1 + 1;
+          final match = entry.$2;
+          return '[$index] Source: ${match.sourceLabel}\n${match.content}';
+        })
+        .join('\n\n');
+
+    final imageInstruction = imagePath == null
+        ? ''
+        : '\nThe student also attached an image. Use the image together with these snippets if both are relevant.';
+
+    return '''
+Use Mentora's uploaded learning material snippets as the main source when they are relevant.
+If the snippets do not contain the answer, say that you could not find it in the uploaded materials, then give a brief general answer if it helps.
+Cite sources inline using the provided source labels, for example [filename, page 2].$imageInstruction
+
+Uploaded learning material snippets:
+$snippets
+
+Student question:
+$text
+''';
   }
 }

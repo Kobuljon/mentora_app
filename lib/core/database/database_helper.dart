@@ -53,18 +53,24 @@ class DatabaseHelper {
   Future<Database> _initDatabase() async {
     final documentsDirectory = await getApplicationDocumentsDirectory();
     final path = join(documentsDirectory.path, _databaseName);
-    return await openDatabase(path,
-        version: _databaseVersion, 
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade);
+    return await openDatabase(
+      path,
+      version: _databaseVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute('ALTER TABLE $tableMaterials ADD COLUMN $columnStatus TEXT DEFAULT "processed"');
+      await db.execute(
+        'ALTER TABLE $tableMaterials ADD COLUMN $columnStatus TEXT DEFAULT "processed"',
+      );
     }
     if (oldVersion < 3) {
-      await db.execute('ALTER TABLE $tableChunks ADD COLUMN $columnPageNumber INTEGER DEFAULT 1');
+      await db.execute(
+        'ALTER TABLE $tableChunks ADD COLUMN $columnPageNumber INTEGER DEFAULT 1',
+      );
       await db.execute('''
           CREATE TABLE $tableQuestionBundles (
             $columnBundleId TEXT PRIMARY KEY,
@@ -98,7 +104,7 @@ class DatabaseHelper {
             $columnCreatedAt INTEGER NOT NULL
           )
           ''');
-    
+
     await db.execute('''
           CREATE TABLE $tableChunks (
             $columnChunkId TEXT PRIMARY KEY,
@@ -110,7 +116,7 @@ class DatabaseHelper {
             FOREIGN KEY($columnMaterialId) REFERENCES $tableMaterials($columnId) ON DELETE CASCADE
           )
           ''');
-          
+
     await db.execute('''
           CREATE TABLE $tableQuestionBundles (
             $columnBundleId TEXT PRIMARY KEY,
@@ -121,7 +127,7 @@ class DatabaseHelper {
             FOREIGN KEY($columnBundleMaterialId) REFERENCES $tableMaterials($columnId) ON DELETE CASCADE
           )
           ''');
-          
+
     await db.execute('''
           CREATE TABLE $tableStudySessions (
             $columnSessionId TEXT PRIMARY KEY,
@@ -154,17 +160,63 @@ class DatabaseHelper {
     );
   }
 
+  Future<void> updateMaterialName(String id, String name) async {
+    Database db = await instance.database;
+    await db.update(
+      tableMaterials,
+      {columnFilename: name},
+      where: '$columnId = ?',
+      whereArgs: [id],
+    );
+  }
+
   Future<List<Map<String, dynamic>>> getAllMaterials() async {
     Database db = await instance.database;
     return await db.query(tableMaterials, orderBy: '$columnCreatedAt DESC');
   }
 
-  Future<List<Map<String, dynamic>>> getChunksForMaterial(String materialId) async {
+  Future<void> markAllProcessingMaterialsAsFailed() async {
+    final db = await instance.database;
+    await db.update(
+      tableMaterials,
+      {columnStatus: 'failed'},
+      where: '$columnStatus = ?',
+      whereArgs: ['processing'],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getChunksForMaterial(
+    String materialId,
+  ) async {
     Database db = await instance.database;
-    return await db.query(tableChunks,
-        where: '$columnMaterialId = ?',
-        whereArgs: [materialId],
-        orderBy: '$columnChunkIndex ASC');
+    return await db.query(
+      tableChunks,
+      where: '$columnMaterialId = ?',
+      whereArgs: [materialId],
+      orderBy: '$columnChunkIndex ASC',
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getSearchableTrainingChunks() async {
+    Database db = await instance.database;
+    return await db.rawQuery(
+      '''
+      SELECT
+        c.$columnChunkId,
+        c.$columnMaterialId,
+        c.$columnChunkIndex,
+        c.$columnPageNumber,
+        c.$columnContent,
+        c.$columnSourceType,
+        m.$columnFilename,
+        m.$columnType
+      FROM $tableChunks c
+      INNER JOIN $tableMaterials m ON m.$columnId = c.$columnMaterialId
+      WHERE m.$columnStatus = ? AND LENGTH(TRIM(c.$columnContent)) > 0
+      ORDER BY m.$columnCreatedAt DESC, c.$columnChunkIndex ASC
+    ''',
+      ['processed'],
+    );
   }
 
   Future<void> insertQuestionBundle(Map<String, dynamic> row) async {
@@ -172,7 +224,10 @@ class DatabaseHelper {
     await db.insert(tableQuestionBundles, row);
   }
 
-  Future<void> updateQuestionBundle(String bundleId, Map<String, dynamic> row) async {
+  Future<void> updateQuestionBundle(
+    String bundleId,
+    Map<String, dynamic> row,
+  ) async {
     Database db = await instance.database;
     await db.update(
       tableQuestionBundles,
@@ -182,12 +237,16 @@ class DatabaseHelper {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getQuestionBundlesForMaterial(String materialId) async {
+  Future<List<Map<String, dynamic>>> getQuestionBundlesForMaterial(
+    String materialId,
+  ) async {
     Database db = await instance.database;
-    return await db.query(tableQuestionBundles,
-        where: '$columnBundleMaterialId = ?',
-        whereArgs: [materialId],
-        orderBy: '$columnBundleCreatedAt DESC');
+    return await db.query(
+      tableQuestionBundles,
+      where: '$columnBundleMaterialId = ?',
+      whereArgs: [materialId],
+      orderBy: '$columnBundleCreatedAt DESC',
+    );
   }
 
   Future<void> insertStudySession(Map<String, dynamic> row) async {
@@ -195,12 +254,16 @@ class DatabaseHelper {
     await db.insert(tableStudySessions, row);
   }
 
-  Future<List<Map<String, dynamic>>> getStudySessionsForBundle(String bundleId) async {
+  Future<List<Map<String, dynamic>>> getStudySessionsForBundle(
+    String bundleId,
+  ) async {
     Database db = await instance.database;
-    return await db.query(tableStudySessions,
-        where: '$columnSessionBundleId = ?',
-        whereArgs: [bundleId],
-        orderBy: '$columnSessionCreatedAt DESC');
+    return await db.query(
+      tableStudySessions,
+      where: '$columnSessionBundleId = ?',
+      whereArgs: [bundleId],
+      orderBy: '$columnSessionCreatedAt DESC',
+    );
   }
 
   Future<void> deleteChunk(String chunkId) async {

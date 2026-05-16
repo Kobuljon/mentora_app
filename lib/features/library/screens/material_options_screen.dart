@@ -1,12 +1,15 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'training_data_screen.dart';
+
+import '../../../core/database/database_helper.dart';
 import '../../study/providers/study_provider.dart';
-import '../../study/screens/study_session_screen.dart';
-import '../../study/screens/session_result_screen.dart';
 import '../../study/screens/generate_questions_screen.dart';
+import '../../study/screens/session_result_screen.dart';
+import '../../study/screens/study_session_screen.dart';
+import 'training_data_screen.dart';
 
 class MaterialOptionsScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> material;
@@ -14,26 +17,38 @@ class MaterialOptionsScreen extends ConsumerStatefulWidget {
   const MaterialOptionsScreen({super.key, required this.material});
 
   @override
-  ConsumerState<MaterialOptionsScreen> createState() => _MaterialOptionsScreenState();
+  ConsumerState<MaterialOptionsScreen> createState() =>
+      _MaterialOptionsScreenState();
 }
 
 class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
+  late Map<String, dynamic> _material;
+
   @override
   void initState() {
     super.initState();
+    _material = Map<String, dynamic>.from(widget.material);
     Future.microtask(() {
-      ref.read(studyProvider.notifier).loadBundles(widget.material['id']);
+      ref.read(studyProvider.notifier).loadBundles(_material['id']);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final filename = widget.material['filename'] ?? 'Unknown Material';
+    final filename =
+        _material[DatabaseHelper.columnFilename] ?? 'Unknown Material';
     final studyState = ref.watch(studyProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(filename),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Rename material',
+            onPressed: _renameMaterial,
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -41,20 +56,29 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ElevatedButton.icon(
-              onPressed: studyState.isGenerating ? null : () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => GenerateQuestionsScreen(material: widget.material),
-                  ),
-                );
-              },
-              icon: studyState.isGenerating 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.auto_awesome),
-              label: Text(studyState.isGenerating 
-                ? (studyState.generatingProgress ?? 'Generating...') 
-                : 'Generate Questions'),
+              onPressed: studyState.isGenerating
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              GenerateQuestionsScreen(material: _material),
+                        ),
+                      );
+                    },
+              icon: studyState.isGenerating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome),
+              label: Text(
+                studyState.isGenerating
+                    ? (studyState.generatingProgress ?? 'Generating...')
+                    : 'Generate Questions',
+              ),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 textStyle: const TextStyle(fontSize: 18),
@@ -62,14 +86,17 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
             ),
             const SizedBox(height: 20),
             OutlinedButton.icon(
-              onPressed: studyState.isGenerating ? null : () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => TrainingDataScreen(material: widget.material),
-                  ),
-                );
-              },
+              onPressed: studyState.isGenerating
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              TrainingDataScreen(material: _material),
+                        ),
+                      );
+                    },
               icon: const Icon(Icons.analytics_outlined),
               label: const Text('Training Data'),
               style: OutlinedButton.styleFrom(
@@ -77,52 +104,87 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
                 textStyle: const TextStyle(fontSize: 18),
               ),
             ),
-            
             if (studyState.error != null) ...[
               const SizedBox(height: 16),
-              Text(studyState.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                studyState.error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ],
-
             const SizedBox(height: 32),
-            Text('Question Bundles', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Question Bundles',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const Divider(),
             Expanded(
               child: studyState.bundles.isEmpty
-                  ? const Center(child: Text('No question bundles generated yet.'))
+                  ? const Center(
+                      child: Text('No question bundles generated yet.'),
+                    )
                   : ListView.builder(
                       itemCount: studyState.bundles.length,
                       itemBuilder: (context, index) {
                         final bundle = studyState.bundles[index];
                         final params = jsonDecode(bundle['params']);
-                        final questions = jsonDecode(bundle['questions']) as List;
-                        final date = DateTime.fromMillisecondsSinceEpoch(bundle['created_at']);
-                        
+                        final questions =
+                            jsonDecode(bundle['questions']) as List;
+                        final date = DateTime.fromMillisecondsSinceEpoch(
+                          bundle['created_at'],
+                        );
+
                         final bundleId = bundle['id'];
-                        final sessions = studyState.sessionsByBundle[bundleId] ?? [];
+                        final sessions =
+                            studyState.sessionsByBundle[bundleId] ?? [];
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ExpansionTile(
-                            leading: const CircleAvatar(child: Icon(Icons.quiz)),
-                            title: Text('${questions.length} Questions (Pages ${params['pageFrom']}-${params['pageTo']})'),
-                            subtitle: Text('Generated: ${DateFormat.yMMMd().add_Hm().format(date)}'),
+                            leading: const CircleAvatar(
+                              child: Icon(Icons.quiz),
+                            ),
+                            title: Text(
+                              '${questions.length} Questions (Pages ${params['pageFrom']}-${params['pageTo']})',
+                            ),
+                            subtitle: Text(
+                              'Generated: ${DateFormat.yMMMd().add_Hm().format(date)}',
+                            ),
                             children: [
                               ...sessions.map((session) {
-                                final sessionDate = DateTime.fromMillisecondsSinceEpoch(session['created_at']);
+                                final sessionDate =
+                                    DateTime.fromMillisecondsSinceEpoch(
+                                      session['created_at'],
+                                    );
                                 return ListTile(
                                   leading: const Icon(Icons.history),
-                                  title: Text('Session ${DateFormat.yMMMd().add_Hm().format(sessionDate)}'),
-                                  trailing: const Icon(Icons.chevron_right, size: 16),
+                                  title: Text(
+                                    'Session ${DateFormat.yMMMd().add_Hm().format(sessionDate)}',
+                                  ),
+                                  trailing: const Icon(
+                                    Icons.chevron_right,
+                                    size: 16,
+                                  ),
                                   onTap: () {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => SessionResultScreen(
-                                          questions: questions.map((e) => e.toString()).toList(),
-                                          userAnswers: (jsonDecode(session['answers']) as List).map((e) => e.toString()).toList(),
-                                          evaluation: jsonDecode(session['evaluation']),
-                                        )
-                                      )
+                                        builder: (context) =>
+                                            SessionResultScreen(
+                                              questions: questions
+                                                  .map((e) => e.toString())
+                                                  .toList(),
+                                              userAnswers:
+                                                  (jsonDecode(
+                                                            session['answers'],
+                                                          )
+                                                          as List)
+                                                      .map((e) => e.toString())
+                                                      .toList(),
+                                              evaluation: jsonDecode(
+                                                session['evaluation'],
+                                              ),
+                                            ),
+                                      ),
                                     );
                                   },
                                 );
@@ -130,24 +192,43 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
                               Padding(
                                 padding: const EdgeInsets.all(16.0),
                                 child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     TextButton.icon(
                                       onPressed: () {
-                                        ref.read(studyProvider.notifier).deleteBundle(widget.material['id'].toString(), bundleId);
+                                        ref
+                                            .read(studyProvider.notifier)
+                                            .deleteBundle(
+                                              _material['id'].toString(),
+                                              bundleId,
+                                            );
                                       },
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      label: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: Colors.red,
+                                      ),
+                                      label: const Text(
+                                        'Delete',
+                                        style: TextStyle(color: Colors.red),
+                                      ),
                                     ),
                                     OutlinedButton.icon(
                                       onPressed: () {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (context) => StudySessionScreen(bundle: bundle),
-                                          )
+                                            builder: (context) =>
+                                                StudySessionScreen(
+                                                  bundle: bundle,
+                                                ),
+                                          ),
                                         ).then((_) {
-                                          ref.read(studyProvider.notifier).loadBundles(widget.material['id'].toString());
+                                          ref
+                                              .read(studyProvider.notifier)
+                                              .loadBundles(
+                                                _material['id'].toString(),
+                                              );
                                         });
                                       },
                                       icon: const Icon(Icons.play_arrow),
@@ -166,5 +247,62 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _renameMaterial() async {
+    final materialId = _material[DatabaseHelper.columnId] as String;
+    final currentName =
+        _material[DatabaseHelper.columnFilename] as String? ?? '';
+    final controller = TextEditingController(text: currentName);
+    final formKey = GlobalKey<FormState>();
+
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Rename material'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Material name',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Enter a name';
+                }
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                Navigator.pop(dialogContext, controller.text.trim());
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+    if (newName == null || newName == currentName) return;
+
+    await DatabaseHelper.instance.updateMaterialName(materialId, newName);
+    if (!mounted) return;
+    setState(() {
+      _material = {..._material, DatabaseHelper.columnFilename: newName};
+    });
   }
 }

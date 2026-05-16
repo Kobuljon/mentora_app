@@ -27,7 +27,9 @@ class AiStudyService {
 
   Future<List<String>> generateQuestions(String textContext, int count) async {
     final systemInstruction =
-        "You are a helpful English teacher. Based on the provided text, generate exactly $count questions. "
+        "You are a helpful English teacher. Based only on the provided training-data text, generate exactly $count questions. "
+        "Questions should test understanding of the actual material, not generic English knowledge. "
+        "Use clear language for 12-16 year old learners. "
         "Provide the output strictly as a JSON array of strings, surrounded by [[JSON_START]] and [[JSON_END]] markers. "
         "IMPORTANT: Each string in the array must be separated by a comma. "
         'Example: [[JSON_START]] ["Question 1", "Question 2"] [[JSON_END]]';
