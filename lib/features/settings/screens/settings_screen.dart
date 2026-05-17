@@ -14,6 +14,7 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
+    final isDarkActive = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -171,7 +172,7 @@ class SettingsScreen extends ConsumerWidget {
                 icon: Icons.dark_mode_outlined,
                 title: 'Dark mode',
                 subtitle: 'Use the dark Mentora theme',
-                value: settings.darkModeEnabled,
+                value: isDarkActive,
                 onChanged: (enabled) => notifier.setThemeMode(
                   enabled ? ThemeMode.dark : ThemeMode.light,
                 ),

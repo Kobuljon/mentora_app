@@ -1,10 +1,5 @@
-import 'dart:math' as math;
-
-import 'dart:math' as math;
-
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:mentora_app/core/theme/app_theme.dart';
 import 'package:mentora_app/features/chat/screens/chat_screen.dart';
 import 'package:mentora_app/features/library/screens/import_materials_screen.dart';
 import 'package:mentora_app/features/library/screens/library_screen.dart';
@@ -12,23 +7,20 @@ import 'package:mentora_app/features/library/screens/library_screen.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  static const _pageBackground = Color(0xFF141119);
-  static const _heroTop = Color(0xFF2A2431);
-  static const _heroBottom = Color(0xFF211D27);
-  static const _panelColor = Color(0xFFF2EFF4);
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
-    final actions = [
+    final actions = <_HomeAction>[
       _HomeAction(
         title: 'Upload &\nAnalyze PDF',
         subtitle: 'Local, private,\nand smart.',
         icon: Icons.note_add_outlined,
-        cardColor: const Color(0xFF2A2436),
-        iconColor: const Color(0xFFD9C8FF),
-        iconBackground: const Color(0xFF4A3E5B),
+        cardColor: AppTheme.primary,
+        foregroundColor: AppTheme.textLight,
+        iconBackground: const Color(0x33FFFFFF),
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const ImportMaterialsScreen()),
@@ -39,38 +31,43 @@ class HomeScreen extends StatelessWidget {
         title: 'Create Quiz',
         subtitle: 'Based on your\nsources.',
         icon: Icons.quiz_outlined,
-        cardColor: const Color(0xFF3A3027),
-        iconColor: const Color(0xFFFFD28E),
-        iconBackground: const Color(0xFF6B5840),
+        cardColor: AppTheme.secondary,
+        foregroundColor: AppTheme.textLight,
+        iconBackground: const Color(0x33FFFFFF),
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const LibraryScreen()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const LibraryScreen()));
         },
       ),
       _HomeAction(
         title: 'Ask your\nTutor',
         subtitle: 'Direct chat\ninterface.',
         icon: Icons.chat_bubble_outline_rounded,
-        cardColor: const Color(0xFF223630),
-        iconColor: const Color(0xFF9EF1C8),
-        iconBackground: const Color(0xFF35594F),
+        cardColor: AppTheme.accent,
+        // Lime card needs dark text for contrast.
+        foregroundColor: AppTheme.textDark,
+        iconBackground: const Color(0x22000000),
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ChatScreen()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ChatScreen()));
         },
       ),
     ];
 
+    final gradientColors = isDark
+        ? const [AppTheme.cardDark, AppTheme.backgroundDark]
+        : const [Color(0xFFF2EEF9), AppTheme.backgroundLight];
+
     return Scaffold(
-      backgroundColor: _pageBackground,
+      backgroundColor: scheme.surface,
       body: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFF1B1720), _pageBackground],
+            colors: gradientColors,
           ),
         ),
         child: SafeArea(
@@ -80,12 +77,12 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _HeroCard(theme: theme),
+                const _HeroCard(),
                 const SizedBox(height: 30),
                 Text(
                   'Get Started',
                   style: theme.textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
+                    color: scheme.onSurface,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.4,
                   ),
@@ -96,7 +93,8 @@ class HomeScreen extends StatelessWidget {
                     const spacing = 14.0;
                     final crossAxisCount = constraints.maxWidth >= 360 ? 3 : 2;
                     final tileWidth =
-                        (constraints.maxWidth - (spacing * (crossAxisCount - 1))) /
+                        (constraints.maxWidth -
+                            (spacing * (crossAxisCount - 1))) /
                         crossAxisCount;
 
                     return Wrap(
@@ -116,7 +114,7 @@ class HomeScreen extends StatelessWidget {
                 Text(
                   'Recent Studies',
                   style: theme.textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
+                    color: scheme.onSurface,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.4,
                   ),
@@ -127,11 +125,8 @@ class HomeScreen extends StatelessWidget {
                 Center(
                   child: TextButton(
                     onPressed: () => _showSampleGuide(context),
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFFE9E0F1),
-                    ),
                     child: const Text(
-                      'Show Guide', 
+                      'Show Guide',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -142,12 +137,12 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Align(
+                Align(
                   alignment: Alignment.centerRight,
                   child: Icon(
                     Icons.auto_awesome_rounded,
                     size: 44,
-                    color: Color(0xFFF0E7FF),
+                    color: scheme.primary.withValues(alpha: 0.85),
                   ),
                 ),
               ],
@@ -161,10 +156,10 @@ class HomeScreen extends StatelessWidget {
   void _showSampleGuide(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1E1924),
       showDragHandle: true,
       builder: (context) {
-        final textTheme = Theme.of(context).textTheme;
+        final theme = Theme.of(context);
+        final scheme = theme.colorScheme;
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
@@ -174,8 +169,8 @@ class HomeScreen extends StatelessWidget {
             children: [
               Text(
                 'Quick Start Guide',
-                style: textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: scheme.onSurface,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -183,19 +178,22 @@ class HomeScreen extends StatelessWidget {
               const _GuideStep(
                 step: '01',
                 title: 'Import your material',
-                subtitle: 'Upload a PDF, image, or audio file and let Mentora extract the important study content.',
+                subtitle:
+                    'Upload a PDF, image, or audio file and let Mentora extract the important study content.',
               ),
               const SizedBox(height: 14),
               const _GuideStep(
                 step: '02',
                 title: 'Generate practice from it',
-                subtitle: 'Use your saved sources in the library to create quizzes and study sessions around the exact topic.',
+                subtitle:
+                    'Use your saved sources in the library to create quizzes and study sessions around the exact topic.',
               ),
               const SizedBox(height: 14),
               const _GuideStep(
                 step: '03',
                 title: 'Ask follow-up questions',
-                subtitle: 'Open the tutor chat when you want explanations, summaries, or revision help.',
+                subtitle:
+                    'Open the tutor chat when you want explanations, summaries, or revision help.',
               ),
             ],
           ),
@@ -206,27 +204,27 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.theme});
-
-  final ThemeData theme;
+  const _HeroCard();
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 22, 20, 22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [HomeScreen._heroTop, HomeScreen._heroBottom],
+          colors: [AppTheme.primary, Color(0xFF4C1D95)],
         ),
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x33000000),
+            color: AppTheme.primary.withValues(alpha: 0.25),
             blurRadius: 24,
-            offset: Offset(0, 12),
+            offset: const Offset(0, 12),
           ),
         ],
       ),
@@ -239,7 +237,7 @@ class _HeroCard extends StatelessWidget {
                 Text(
                   'Welcome to your\nAI Tutor!',
                   style: theme.textTheme.headlineMedium?.copyWith(
-                    color: Colors.white,
+                    color: scheme.onPrimary,
                     fontWeight: FontWeight.w900,
                     height: 1.05,
                     letterSpacing: -0.7,
@@ -249,7 +247,7 @@ class _HeroCard extends StatelessWidget {
                 Text(
                   'Your local agent is ready to help.',
                   style: theme.textTheme.bodyLarge?.copyWith(
-                    color: const Color(0xFFD0C7D9),
+                    color: scheme.onPrimary.withValues(alpha: 0.85),
                     height: 1.25,
                   ),
                 ),
@@ -284,7 +282,7 @@ class _TutorBadge extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.white.withValues(alpha: 0.2),
+                  Colors.white.withValues(alpha: 0.22),
                   Colors.white.withValues(alpha: 0.06),
                 ],
               ),
@@ -293,7 +291,7 @@ class _TutorBadge extends StatelessWidget {
           const Icon(
             Icons.smart_toy_outlined,
             size: 44,
-            color: Color(0xFFE9E0F2),
+            color: AppTheme.textLight,
           ),
           Positioned(
             top: 8,
@@ -302,7 +300,7 @@ class _TutorBadge extends StatelessWidget {
               child: const Icon(
                 Icons.school_rounded,
                 size: 36,
-                color: Color(0xFFE9E0F2),
+                color: AppTheme.textLight,
               ),
             ),
           ),
@@ -319,6 +317,7 @@ class _QuickActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fg = action.foregroundColor;
     return SizedBox(
       height: 178,
       child: Material(
@@ -339,13 +338,13 @@ class _QuickActionCard extends StatelessWidget {
                     color: action.iconBackground,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Icon(action.icon, color: action.iconColor, size: 28),
+                  child: Icon(action.icon, color: fg, size: 28),
                 ),
                 const Spacer(),
                 Text(
                   action.title,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: fg,
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                     height: 1.1,
@@ -355,11 +354,11 @@ class _QuickActionCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   action.subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFFD4CDD9),
+                  style: TextStyle(
+                    color: fg.withValues(alpha: 0.78),
                     fontSize: 11.8,
                     height: 1.15,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -376,12 +375,16 @@ class _RecentStudiesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 34, 24, 30),
       decoration: BoxDecoration(
-        color: HomeScreen._panelColor,
+        color: scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         children: [
@@ -389,16 +392,16 @@ class _RecentStudiesCard extends StatelessWidget {
             width: 140,
             height: 28,
             decoration: BoxDecoration(
-              color: const Color(0xFFD9D5DC),
+              color: AppTheme.primary.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(20),
             ),
           ),
           const SizedBox(height: 32),
-          const Text(
+          Text(
             'Your recent documents and chats will\nappear here.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFF7C7485),
+              color: scheme.onSurfaceVariant,
               fontSize: 16,
               height: 1.18,
               fontWeight: FontWeight.w500,
@@ -423,6 +426,9 @@ class _GuideStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -431,13 +437,13 @@ class _GuideStep extends StatelessWidget {
           height: 42,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: const Color(0xFF342B40),
+            color: scheme.primaryContainer,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Text(
             step,
-            style: const TextStyle(
-              color: Color(0xFFE9E0F2),
+            style: TextStyle(
+              color: scheme.onPrimaryContainer,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -449,8 +455,8 @@ class _GuideStep extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: scheme.onSurface,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
@@ -458,8 +464,8 @@ class _GuideStep extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: const TextStyle(
-                  color: Color(0xFFD0C7D8),
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
                   fontSize: 14,
                   height: 1.3,
                 ),
@@ -478,7 +484,7 @@ class _HomeAction {
     required this.subtitle,
     required this.icon,
     required this.cardColor,
-    required this.iconColor,
+    required this.foregroundColor,
     required this.iconBackground,
     required this.onTap,
   });
@@ -487,7 +493,7 @@ class _HomeAction {
   final String subtitle;
   final IconData icon;
   final Color cardColor;
-  final Color iconColor;
+  final Color foregroundColor;
   final Color iconBackground;
   final VoidCallback onTap;
 }
