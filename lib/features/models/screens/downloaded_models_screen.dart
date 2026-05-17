@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/widgets/brand_logo.dart';
 import '../../onboarding/services/model_download_service.dart';
 
 class DownloadedModelsScreen extends StatefulWidget {
@@ -119,7 +120,7 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
         future: _modelsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: MentoraLogoLoader(size: 34));
           }
 
           if (snapshot.hasError) {

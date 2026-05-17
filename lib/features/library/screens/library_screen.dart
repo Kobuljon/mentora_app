@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/database_helper.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/brand_logo.dart';
 import 'import_materials_screen.dart';
 import 'material_options_screen.dart';
 
@@ -43,6 +44,63 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     _loadMaterials();
   }
 
+  Future<void> _renameMaterial(Map<String, dynamic> material) async {
+    final materialId = material[DatabaseHelper.columnId] as String?;
+    if (materialId == null || materialId.isEmpty) return;
+
+    final currentName =
+        material[DatabaseHelper.columnFilename] as String? ?? 'Material';
+    final controller = TextEditingController(text: currentName);
+    final formKey = GlobalKey<FormState>();
+
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Rename material'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Material name'),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Enter a name';
+                }
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                Navigator.pop(dialogContext, controller.text.trim());
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+    if (!mounted || newName == null || newName == currentName) return;
+
+    await DatabaseHelper.instance.updateMaterialName(materialId, newName);
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Material renamed')));
+    _loadMaterials();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -61,7 +119,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: MentoraLogoLoader(size: 34))
           : RefreshIndicator(
               onRefresh: _loadMaterials,
               child: ListView(
@@ -97,6 +155,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             if (!mounted) return;
                             _loadMaterials();
                           },
+                          onRename: () => _renameMaterial(material),
                         ),
                       ),
                   ],
@@ -189,11 +248,7 @@ class _LibraryHero extends StatelessWidget {
               color: scheme.onPrimary.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(18),
             ),
-            child: Icon(
-              Icons.menu_book_rounded,
-              color: scheme.onPrimary,
-              size: 32,
-            ),
+            child: MentoraLogo(size: 60, padding: 10),
           ),
         ],
       ),
@@ -228,11 +283,7 @@ class _EmptyState extends StatelessWidget {
               color: AppTheme.primary.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Icon(
-              Icons.auto_stories_rounded,
-              color: AppTheme.primary,
-              size: 32,
-            ),
+            child: const MentoraLogo(size: 64, padding: 12),
           ),
           const SizedBox(height: 16),
           Text(
@@ -264,10 +315,15 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _MaterialCard extends StatelessWidget {
-  const _MaterialCard({required this.material, required this.onTap});
+  const _MaterialCard({
+    required this.material,
+    required this.onTap,
+    required this.onRename,
+  });
 
   final Map<String, dynamic> material;
   final VoidCallback onTap;
+  final VoidCallback onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -347,7 +403,18 @@ class _MaterialCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert_rounded,
+                  color: scheme.onSurfaceVariant,
+                ),
+                onSelected: (value) {
+                  if (value == 'rename') onRename();
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem<String>(value: 'rename', child: Text('Rename')),
+                ],
+              ),
             ],
           ),
         ),

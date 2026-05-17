@@ -36,6 +36,22 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
               const Divider(height: 1),
+              _SettingsTile(
+                icon: Icons.graphic_eq_rounded,
+                title: 'Audio transcription',
+                subtitle:
+                    settings.audioTranscriptionBackend ==
+                        AudioTranscriptionBackend.sherpaOnnx
+                    ? 'Offline Sherpa ONNX (WAV-first setup)'
+                    : 'Built-in placeholder transcript engine',
+                trailing: _ChoiceChipMenu<AudioTranscriptionBackend>(
+                  value: settings.audioTranscriptionBackend,
+                  values: AudioTranscriptionBackend.values,
+                  labelFor: (value) => value.label,
+                  onSelected: notifier.setAudioTranscriptionBackend,
+                ),
+              ),
+              const Divider(height: 1),
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: Row(

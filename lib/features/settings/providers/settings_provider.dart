@@ -44,6 +44,18 @@ enum AiBackendProvider {
   final String label;
 }
 
+enum AudioTranscriptionBackend {
+  placeholder('Built-in placeholder'),
+  sherpaOnnx('Sherpa ONNX (offline)');
+
+  const AudioTranscriptionBackend(this.label);
+
+  final String label;
+}
+
+const audioTranscriptionBackendPreferenceKey =
+    'settings.audioTranscriptionBackend';
+
 class AppSettings {
   const AppSettings({
     this.themeMode = ThemeMode.system,
@@ -63,6 +75,7 @@ class AppSettings {
     this.azureOpenAiApiVersion = '2024-10-21',
     this.geminiApiKey = '',
     this.geminiModel = 'gemini-2.5-flash',
+    this.audioTranscriptionBackend = AudioTranscriptionBackend.placeholder,
   });
 
   final ThemeMode themeMode;
@@ -82,6 +95,7 @@ class AppSettings {
   final String azureOpenAiApiVersion;
   final String geminiApiKey;
   final String geminiModel;
+  final AudioTranscriptionBackend audioTranscriptionBackend;
 
   bool get darkModeEnabled => themeMode == ThemeMode.dark;
 
@@ -135,6 +149,7 @@ class AppSettings {
     String? azureOpenAiApiVersion,
     String? geminiApiKey,
     String? geminiModel,
+    AudioTranscriptionBackend? audioTranscriptionBackend,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -157,6 +172,8 @@ class AppSettings {
           azureOpenAiApiVersion ?? this.azureOpenAiApiVersion,
       geminiApiKey: geminiApiKey ?? this.geminiApiKey,
       geminiModel: geminiModel ?? this.geminiModel,
+      audioTranscriptionBackend:
+          audioTranscriptionBackend ?? this.audioTranscriptionBackend,
     );
   }
 }
@@ -250,6 +267,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _update(state.copyWith(geminiApiKey: apiKey, geminiModel: model));
   }
 
+  Future<void> setAudioTranscriptionBackend(
+    AudioTranscriptionBackend backend,
+  ) async {
+    await _update(state.copyWith(audioTranscriptionBackend: backend));
+  }
+
   Future<void> _load() async {
     final preferences = await SharedPreferences.getInstance();
     state = AppSettings(
@@ -298,6 +321,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
           preferences.getString(_azureOpenAiApiVersionKey) ?? '2024-10-21',
       geminiApiKey: preferences.getString(_geminiApiKeyKey) ?? '',
       geminiModel: preferences.getString(_geminiModelKey) ?? 'gemini-2.5-flash',
+      audioTranscriptionBackend: _readEnum(
+        preferences,
+        audioTranscriptionBackendPreferenceKey,
+        AudioTranscriptionBackend.values,
+        AudioTranscriptionBackend.placeholder,
+      ),
     );
   }
 
@@ -331,6 +360,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       ),
       preferences.setString(_geminiApiKeyKey, next.geminiApiKey),
       preferences.setString(_geminiModelKey, next.geminiModel),
+      preferences.setString(
+        audioTranscriptionBackendPreferenceKey,
+        next.audioTranscriptionBackend.name,
+      ),
     ]);
   }
 

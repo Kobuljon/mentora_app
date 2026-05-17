@@ -2,11 +2,15 @@ import 'dart:io';
 import 'package:uuid/uuid.dart';
 import 'package:path/path.dart' as p;
 import 'package:archive/archive_io.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import '../../../core/database/database_helper.dart';
+import '../../settings/providers/settings_provider.dart';
 
 class MaterialProcessorService {
   static final MaterialProcessorService instance =
@@ -17,6 +21,7 @@ class MaterialProcessorService {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
   bool _isInit = false;
+  bool _sherpaBindingsReady = false;
   static final _wordPattern = RegExp(r"[A-Za-z][A-Za-z'-]{2,}");
   static final _symbolPattern = RegExp(r'''[^A-Za-z0-9\s.,;:!?'"()\-/]''');
   static final _vowelPattern = RegExp(r'[aeiou]', caseSensitive: false);
@@ -308,24 +313,38 @@ class MaterialProcessorService {
       10,
     );
 
-    // NOTE: Simulating offline Whisper audio slicing and ASR.
-    // In production with whisper_flutter_plus, use Whisper.transcribe(filePath) here.
-    await Future.delayed(const Duration(seconds: 3));
-    final simulatedTranscript =
-        "This is a placeholder transcribed audio output since the flutter whisper package requires platform specific integration in the native layer (which needs manual setup in C++ and AppDelegate.swift for iOS, and CMakeLists for Android).";
+    final backend = await _getAudioBackend();
+    String transcript;
+
+    if (backend == AudioTranscriptionBackend.sherpaOnnx) {
+      try {
+        if (onProgress != null) {
+          onProgress('Transcribing with Sherpa ONNX...', 0.6);
+        }
+        await _showNotification(
+          'Processing $title',
+          'Transcribing with Sherpa ONNX...',
+          100,
+          60,
+        );
+        transcript = await _transcribeAudioWithSherpaOnnx(file);
+      } catch (error) {
+        transcript = await _buildPlaceholderAudioTranscript(file, error);
+      }
+    } else {
+      transcript = await _buildPlaceholderAudioTranscript(file, null);
+    }
 
     if (onProgress != null) {
-      onProgress('Improving transcript with Gemma...', 0.7);
+      onProgress('Finalizing transcript...', 0.9);
     }
     await _showNotification(
       'Processing $title',
-      'Improving transcript with Gemma...',
+      'Finalizing transcript...',
       100,
-      70,
+      90,
     );
-    // Clean with AI (Skipped for now to improve speed)
-    final improvedText =
-        simulatedTranscript; // await _improveTextWithGemma(simulatedTranscript, aiService);
+    final improvedText = transcript;
 
     await DatabaseHelper.instance.insertChunk({
       DatabaseHelper.columnChunkId: _uuid.v4(),
@@ -337,6 +356,102 @@ class MaterialProcessorService {
 
     await DatabaseHelper.instance.updateMaterialStatus(materialId, 'processed');
     await _showNotification('Import Complete', '$title is ready.', 1, 1);
+  }
+
+  Future<AudioTranscriptionBackend> _getAudioBackend() async {
+    final preferences = await SharedPreferences.getInstance();
+    final value = preferences.getString(audioTranscriptionBackendPreferenceKey);
+    if (value == AudioTranscriptionBackend.sherpaOnnx.name) {
+      return AudioTranscriptionBackend.sherpaOnnx;
+    }
+    return AudioTranscriptionBackend.placeholder;
+  }
+
+  Future<String> _transcribeAudioWithSherpaOnnx(File file) async {
+    final extension = p.extension(file.path).toLowerCase();
+    if (extension != '.wav') {
+      throw UnsupportedError(
+        'Sherpa ONNX currently supports WAV imports in this app. Please convert the file to .wav first.',
+      );
+    }
+
+    if (!_sherpaBindingsReady) {
+      sherpa.initBindings();
+      _sherpaBindingsReady = true;
+    }
+
+    final supportDir = await getApplicationSupportDirectory();
+    final modelRoot = p.join(
+      supportDir.path,
+      'models',
+      'sherpa_onnx',
+      'whisper_tiny',
+    );
+    final encoderPath = p.join(modelRoot, 'encoder.int8.onnx');
+    final decoderPath = p.join(modelRoot, 'decoder.int8.onnx');
+    final tokensPath = p.join(modelRoot, 'tokens.txt');
+
+    final missing = <String>[];
+    if (!File(encoderPath).existsSync()) missing.add('encoder.int8.onnx');
+    if (!File(decoderPath).existsSync()) missing.add('decoder.int8.onnx');
+    if (!File(tokensPath).existsSync()) missing.add('tokens.txt');
+    if (missing.isNotEmpty) {
+      throw FileSystemException(
+        'Missing Sherpa ONNX model files: ${missing.join(', ')}. Expected in $modelRoot',
+      );
+    }
+
+    final whisperConfig = sherpa.OfflineWhisperModelConfig(
+      encoder: encoderPath,
+      decoder: decoderPath,
+      language: 'en',
+      task: 'transcribe',
+    );
+    final modelConfig = sherpa.OfflineModelConfig(
+      whisper: whisperConfig,
+      tokens: tokensPath,
+      modelType: 'whisper',
+      numThreads: 2,
+      debug: false,
+    );
+    final recognizer = sherpa.OfflineRecognizer(
+      sherpa.OfflineRecognizerConfig(model: modelConfig),
+    );
+
+    sherpa.OfflineStream? stream;
+    try {
+      final wave = sherpa.readWave(file.path);
+      if (wave.sampleRate <= 0 || wave.samples.isEmpty) {
+        throw const FormatException(
+          'Could not decode WAV file for Sherpa ONNX transcription.',
+        );
+      }
+
+      stream = recognizer.createStream();
+      stream.acceptWaveform(samples: wave.samples, sampleRate: wave.sampleRate);
+      recognizer.decode(stream);
+      final text = recognizer.getResult(stream).text.trim();
+      if (text.isEmpty) {
+        throw const FormatException(
+          'Sherpa ONNX returned an empty transcript.',
+        );
+      }
+      return text;
+    } finally {
+      stream?.free();
+      recognizer.free();
+    }
+  }
+
+  Future<String> _buildPlaceholderAudioTranscript(
+    File file,
+    Object? failure,
+  ) async {
+    await Future.delayed(const Duration(seconds: 2));
+    final reason = failure == null
+        ? 'Audio backend is set to placeholder mode.'
+        : 'Sherpa ONNX failed: $failure';
+    return 'Audio transcript placeholder for ${p.basename(file.path)}. $reason';
   }
 
   List<String> _splitText(String text, int length) {

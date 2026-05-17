@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mentora_app/core/database/database_helper.dart';
 import 'package:mentora_app/core/theme/app_theme.dart';
+import 'package:mentora_app/core/widgets/brand_logo.dart';
 import 'package:mentora_app/features/chat/screens/chat_screen.dart';
 import 'package:mentora_app/features/library/screens/import_materials_screen.dart';
 import 'package:mentora_app/features/library/screens/library_screen.dart';
@@ -243,39 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const _HeroCard(),
-                const SizedBox(height: 30),
-                Text(
-                  'Get Started',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    const spacing = 14.0;
-                    final crossAxisCount = constraints.maxWidth >= 360 ? 3 : 2;
-                    final tileWidth =
-                        (constraints.maxWidth -
-                            (spacing * (crossAxisCount - 1))) /
-                        crossAxisCount;
-
-                    return Wrap(
-                      spacing: spacing,
-                      runSpacing: spacing,
-                      children: [
-                        for (final action in actions)
-                          SizedBox(
-                            width: tileWidth,
-                            child: _QuickActionCard(action: action),
-                          ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 20),
                 Row(
                   children: [
                     Expanded(
@@ -312,22 +281,37 @@ class _HomeScreenState extends State<HomeScreen> {
                         .then((_) => _refreshRecent());
                   },
                 ),
-                const SizedBox(height: 12),
-                Center(
-                  child: TextButton(
-                    onPressed: () => _showSampleGuide(context),
-                    child: const Text(
-                      'Show Guide',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        decoration: TextDecoration.underline,
-                        decorationThickness: 1.6,
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => _showSampleGuide(context),
+                      icon: const Icon(Icons.help_outline_rounded, size: 18),
+                      label: const Text(
+                        'Guide',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
+                // Compact single-row quick-action chips
+                Row(
+                  children: actions
+                      .map(
+                        (a) => Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              right: a == actions.last ? 0 : 10,
+                            ),
+                            child: _QuickActionChip(action: a),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,
                   child: Icon(
@@ -461,99 +445,60 @@ class _TutorBadge extends StatelessWidget {
     return SizedBox(
       width: 94,
       height: 94,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white.withValues(alpha: 0.22),
-                  Colors.white.withValues(alpha: 0.06),
-                ],
-              ),
-            ),
-          ),
-          const Icon(
-            Icons.smart_toy_outlined,
-            size: 44,
-            color: AppTheme.textLight,
-          ),
-          Positioned(
-            top: 8,
-            child: Transform.rotate(
-              angle: -0.18,
-              child: const Icon(
-                Icons.school_rounded,
-                size: 36,
-                color: AppTheme.textLight,
-              ),
-            ),
-          ),
-        ],
+      child: Center(
+        child: Image.asset(
+          'assets/icon/logo.png',
+          width: 80,
+          height: 80,
+          fit: BoxFit.contain,
+        ),
       ),
     );
   }
 }
 
-class _QuickActionCard extends StatelessWidget {
-  const _QuickActionCard({required this.action});
+class _QuickActionChip extends StatelessWidget {
+  const _QuickActionChip({required this.action});
 
   final _HomeAction action;
 
   @override
   Widget build(BuildContext context) {
     final fg = action.foregroundColor;
-    return SizedBox(
-      height: 178,
-      child: Material(
-        color: action.cardColor,
-        borderRadius: BorderRadius.circular(24),
-        child: InkWell(
-          onTap: action.onTap,
-          borderRadius: BorderRadius.circular(24),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 14, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: action.iconBackground,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(action.icon, color: fg, size: 28),
+    return Material(
+      color: action.cardColor,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: action.iconBackground,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const Spacer(),
-                Text(
-                  action.title,
-                  style: TextStyle(
-                    color: fg,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
-                    letterSpacing: -0.2,
-                  ),
+                child: Icon(action.icon, color: fg, size: 22),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                // single-line label (strip the newline)
+                action.title.replaceAll('\n', ' '),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  height: 1.15,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  action.subtitle,
-                  style: TextStyle(
-                    color: fg.withValues(alpha: 0.78),
-                    fontSize: 11.8,
-                    height: 1.15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -585,7 +530,7 @@ class _RecentQuizzesSection extends StatelessWidget {
             scheme,
             child: const Padding(
               padding: EdgeInsets.symmetric(vertical: 18),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: MentoraLogoLoader(size: 28)),
             ),
           );
         }
@@ -721,10 +666,7 @@ class _RecentQuizCard extends StatelessWidget {
                   color: scheme.primaryContainer,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(
-                  Icons.quiz_outlined,
-                  color: scheme.onPrimaryContainer,
-                ),
+                child: const MentoraLogo(size: 46, padding: 9),
               ),
               const SizedBox(width: 12),
               Expanded(

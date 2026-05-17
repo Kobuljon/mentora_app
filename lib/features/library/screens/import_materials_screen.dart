@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/brand_logo.dart';
 import '../services/material_processor_service.dart';
 
 class ImportMaterialsScreen extends ConsumerStatefulWidget {
@@ -226,11 +227,7 @@ class _ImportHero extends StatelessWidget {
               color: scheme.onPrimary.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(
-              Icons.cloud_upload_rounded,
-              color: scheme.onPrimary,
-              size: 28,
-            ),
+            child: const MentoraLogo(size: 28),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -276,44 +273,46 @@ class _FormatGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 4,
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      childAspectRatio: 0.95,
+    return Row(
       children: [
-        for (final f in formats)
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainer,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: scheme.outlineVariant),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: f.color.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(10),
+        for (int i = 0; i < formats.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: formats[i].color.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      formats[i].icon,
+                      color: formats[i].color,
+                      size: 20,
+                    ),
                   ),
-                  child: Icon(f.icon, color: f.color, size: 20),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  f.label,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w700,
+                  const SizedBox(height: 7),
+                  Text(
+                    formats[i].label,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
+        ],
       ],
     );
   }

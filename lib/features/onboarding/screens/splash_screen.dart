@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/brand_logo.dart';
 import '../../../navigation/main_screen.dart';
 import '../../onboarding/screens/model_setup_screen.dart';
 import '../../onboarding/services/model_download_service.dart';
@@ -45,19 +46,11 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // App logo placeholder
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Icon(
-                Icons.school_rounded,
-                size: 56,
-                color: colorScheme.onPrimaryContainer,
-              ),
+            MentoraLogo(
+              size: 96,
+              padding: 12,
+              backgroundColor: colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(24),
             ),
             const SizedBox(height: 24),
             Text(
@@ -68,7 +61,7 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             ),
             const SizedBox(height: 48),
-            CircularProgressIndicator(color: colorScheme.primary),
+            const MentoraLogoLoader(size: 34),
           ],
         ),
       ),

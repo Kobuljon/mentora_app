@@ -44,6 +44,7 @@ dependencies:
 
   # Storage
   path_provider: ^2.1.5
+  path: ^1.9.1
   shared_preferences: ^2.3.3
 
   # Disk space check
@@ -75,6 +76,7 @@ dependencies:
   pdfx: ^2.9.2
   file_selector: ^1.1.0
   flutter_tts: ^4.2.5
+  sherpa_onnx: ^1.13.2
 
 dev_dependencies:
   flutter_test:

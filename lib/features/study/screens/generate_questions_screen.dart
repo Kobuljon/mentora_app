@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/database_helper.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/brand_logo.dart';
 import '../providers/study_provider.dart';
 
 class GenerateQuestionsScreen extends ConsumerStatefulWidget {
@@ -81,7 +82,7 @@ class _GenerateQuestionsScreenState
       backgroundColor: scheme.surface,
       appBar: AppBar(title: const Text('Generate Quiz')),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: MentoraLogoLoader(size: 34))
           : _pages.isEmpty
           ? _EmptyContent(filename: filename)
           : SingleChildScrollView(
@@ -100,67 +101,60 @@ class _GenerateQuestionsScreenState
                       maxPage: _maxPage,
                     ),
                     const SizedBox(height: 20),
-                    _SectionHeader(title: 'Page range'),
+                    _SectionHeader(title: 'Pages'),
                     const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _Preset(
-                          icon: Icons.select_all_rounded,
-                          label: 'All pages',
-                          onTap: isGenerating
-                              ? null
-                              : () => _setRange(_minPage, _maxPage),
-                        ),
-                        _Preset(
-                          icon: Icons.first_page_rounded,
-                          label: 'First 5',
-                          onTap: isGenerating
-                              ? null
-                              : () => _setRange(
-                                  _minPage,
-                                  (_minPage + 4).clamp(_minPage, _maxPage),
-                                ),
-                        ),
-                        _Preset(
-                          icon: Icons.last_page_rounded,
-                          label: 'Last 5',
-                          onTap: isGenerating
-                              ? null
-                              : () => _setRange(
-                                  (_maxPage - 4).clamp(_minPage, _maxPage),
-                                  _maxPage,
-                                ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
                     Row(
                       children: [
                         Expanded(
-                          child: _NumberField(
-                            controller: _pageFromCtrl,
+                          child: _PageDropdownField(
+                            value: int.tryParse(_pageFromCtrl.text.trim()),
+                            items: _pages,
                             label: 'From page',
-                            helperText: 'Min $_minPage',
                             enabled: !isGenerating,
-                            validator: _validateFromPage,
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _pageFromCtrl.text = value.toString();
+                              });
+                            },
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _NumberField(
-                            controller: _pageToCtrl,
+                          child: _PageDropdownField(
+                            value: int.tryParse(_pageToCtrl.text.trim()),
+                            items: _pages,
                             label: 'To page',
-                            helperText: 'Max $_maxPage',
                             enabled: !isGenerating,
-                            validator: _validateToPage,
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _pageToCtrl.text = value.toString();
+                              });
+                            },
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 18),
-                    _SectionHeader(title: 'Number of questions'),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: _SectionHeader(title: 'Number of questions'),
+                        ),
+                        SizedBox(
+                          width: 110,
+                          child: _NumberField(
+                            controller: _countCtrl,
+                            label: 'Custom',
+                            helperText: null,
+                            enabled: !isGenerating,
+                            validator: _validateQuestionCount,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
@@ -177,15 +171,6 @@ class _GenerateQuestionsScreenState
                                   ),
                           ),
                       ],
-                    ),
-                    const SizedBox(height: 12),
-                    _NumberField(
-                      controller: _countCtrl,
-                      label: 'Custom count',
-                      helperText: '1-30 recommended',
-                      enabled: !isGenerating,
-                      validator: _validateQuestionCount,
-                      onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 22),
                     _SectionHeader(title: 'Available pages'),
@@ -297,10 +282,7 @@ class _GenerateQuestionsScreenState
                                 SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.2,
-                                    color: scheme.primary,
-                                  ),
+                                  child: MentoraLogoLoader(size: 18),
                                 ),
                                 const SizedBox(width: 10),
                                 Text(
@@ -399,28 +381,6 @@ class _GenerateQuestionsScreenState
     });
   }
 
-  String? _validateFromPage(String? value) {
-    final number = int.tryParse(value?.trim() ?? '');
-    if (number == null) return 'Required';
-    if (number < _minPage || number > _maxPage) {
-      return 'Use $_minPage-$_maxPage';
-    }
-    final to = int.tryParse(_pageToCtrl.text.trim());
-    if (to != null && number > to) return 'After To';
-    return null;
-  }
-
-  String? _validateToPage(String? value) {
-    final number = int.tryParse(value?.trim() ?? '');
-    if (number == null) return 'Required';
-    if (number < _minPage || number > _maxPage) {
-      return 'Use $_minPage-$_maxPage';
-    }
-    final from = int.tryParse(_pageFromCtrl.text.trim());
-    if (from != null && number < from) return 'Before From';
-    return null;
-  }
-
   String? _validateQuestionCount(String? value) {
     final number = int.tryParse(value?.trim() ?? '');
     if (number == null) return 'Required';
@@ -432,12 +392,21 @@ class _GenerateQuestionsScreenState
   Future<void> _generateQuestions() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final fromPage = int.tryParse(_pageFromCtrl.text.trim());
+    final toPage = int.tryParse(_pageToCtrl.text.trim());
+    if (fromPage == null || toPage == null || fromPage > toPage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose a valid page range.')),
+      );
+      return;
+    }
+
     final notifier = ref.read(studyProvider.notifier);
     final materialId = widget.material[DatabaseHelper.columnId] as String;
     await notifier.generateQuestions(
       materialId: materialId,
-      pageFrom: int.parse(_pageFromCtrl.text.trim()),
-      pageTo: int.parse(_pageToCtrl.text.trim()),
+      pageFrom: fromPage,
+      pageTo: toPage,
       count: int.parse(_countCtrl.text.trim()),
     );
 
@@ -473,44 +442,6 @@ class _SectionHeader extends StatelessWidget {
       style: theme.textTheme.titleMedium?.copyWith(
         color: theme.colorScheme.onSurface,
         fontWeight: FontWeight.w800,
-      ),
-    );
-  }
-}
-
-class _Preset extends StatelessWidget {
-  const _Preset({required this.icon, required this.label, required this.onTap});
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.primaryContainer,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: scheme.onPrimaryContainer),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: scheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -571,7 +502,7 @@ class _NumberField extends StatelessWidget {
 
   final TextEditingController controller;
   final String label;
-  final String helperText;
+  final String? helperText;
   final bool enabled;
   final String? Function(String?) validator;
   final ValueChanged<String>? onChanged;
@@ -586,6 +517,53 @@ class _NumberField extends StatelessWidget {
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       validator: validator,
       onChanged: onChanged,
+    );
+  }
+}
+
+class _PageDropdownField extends StatelessWidget {
+  const _PageDropdownField({
+    required this.value,
+    required this.items,
+    required this.label,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final int? value;
+  final List<_PageSummary> items;
+  final String label;
+  final bool enabled;
+  final ValueChanged<int?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<int>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label),
+      items: [
+        for (final item in items)
+          DropdownMenuItem<int>(
+            value: item.pageNumber,
+            child: Text(
+              'P${item.pageNumber} • ${item.title}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      selectedItemBuilder: (context) {
+        return [
+          for (final item in items)
+            Text(
+              'Page ${item.pageNumber}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+        ];
+      },
+      onChanged: enabled ? onChanged : null,
     );
   }
 }
