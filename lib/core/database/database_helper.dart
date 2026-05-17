@@ -249,6 +249,32 @@ class DatabaseHelper {
     );
   }
 
+  /// Returns the most recent question bundles across all materials, joined
+  /// with the parent material's filename/type so the UI can display them
+  /// without an extra round-trip.
+  Future<List<Map<String, dynamic>>> getRecentQuestionBundles({
+    int limit = 5,
+  }) async {
+    Database db = await instance.database;
+    return await db.rawQuery(
+      '''
+      SELECT
+        b.$columnBundleId AS id,
+        b.$columnBundleMaterialId AS material_id,
+        b.$columnBundleCreatedAt AS created_at,
+        b.$columnBundleParams AS params,
+        b.$columnBundleQuestions AS questions,
+        m.$columnFilename AS material_filename,
+        m.$columnType AS material_type
+      FROM $tableQuestionBundles b
+      INNER JOIN $tableMaterials m ON m.$columnId = b.$columnBundleMaterialId
+      ORDER BY b.$columnBundleCreatedAt DESC
+      LIMIT ?
+      ''',
+      [limit],
+    );
+  }
+
   Future<void> insertStudySession(Map<String, dynamic> row) async {
     Database db = await instance.database;
     await db.insert(tableStudySessions, row);

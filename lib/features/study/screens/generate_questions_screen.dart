@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/database_helper.dart';
+import '../../../core/theme/app_theme.dart';
 import '../providers/study_provider.dart';
 
 class GenerateQuestionsScreen extends ConsumerStatefulWidget {
@@ -33,7 +34,7 @@ class _GenerateQuestionsScreenState
   @override
   void initState() {
     super.initState();
-    Future.microtask(_loadTrainingData);
+    Future.microtask(_loadContent);
   }
 
   @override
@@ -44,7 +45,7 @@ class _GenerateQuestionsScreenState
     super.dispose();
   }
 
-  Future<void> _loadTrainingData() async {
+  Future<void> _loadContent() async {
     final materialId = widget.material[DatabaseHelper.columnId] as String;
     final chunks = await DatabaseHelper.instance.getChunksForMaterial(
       materialId,
@@ -69,77 +70,63 @@ class _GenerateQuestionsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final studyState = ref.watch(studyProvider);
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final scheme = theme.colorScheme;
+    final studyState = ref.watch(studyProvider);
     final filename =
-        widget.material[DatabaseHelper.columnFilename] as String? ??
-        'Training material';
-    final type =
-        widget.material[DatabaseHelper.columnType] as String? ?? 'file';
+        widget.material[DatabaseHelper.columnFilename] as String? ?? 'Material';
     final isGenerating = studyState.isGenerating;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Generate Questions')),
+      backgroundColor: scheme.surface,
+      appBar: AppBar(title: const Text('Generate Quiz')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _pages.isEmpty
-          ? _EmptyTrainingData(filename: filename)
+          ? _EmptyContent(filename: filename)
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _MaterialSummaryCard(
+                    _SummaryHero(
                       filename: filename,
-                      type: type,
                       pageCount: _pages.length,
                       chunkCount: _chunkCount,
                       characterCount: _characterCount,
                       minPage: _minPage,
                       maxPage: _maxPage,
                     ),
-                    const SizedBox(height: 18),
-                    Text(
-                      'Question range',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    const SizedBox(height: 20),
+                    _SectionHeader(title: 'Page range'),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        ActionChip(
-                          avatar: const Icon(
-                            Icons.select_all_rounded,
-                            size: 18,
-                          ),
-                          label: const Text('All pages'),
-                          onPressed: isGenerating
+                        _Preset(
+                          icon: Icons.select_all_rounded,
+                          label: 'All pages',
+                          onTap: isGenerating
                               ? null
                               : () => _setRange(_minPage, _maxPage),
                         ),
-                        ActionChip(
-                          avatar: const Icon(
-                            Icons.first_page_rounded,
-                            size: 18,
-                          ),
-                          label: const Text('First 5'),
-                          onPressed: isGenerating
+                        _Preset(
+                          icon: Icons.first_page_rounded,
+                          label: 'First 5',
+                          onTap: isGenerating
                               ? null
                               : () => _setRange(
                                   _minPage,
                                   (_minPage + 4).clamp(_minPage, _maxPage),
                                 ),
                         ),
-                        ActionChip(
-                          avatar: const Icon(Icons.last_page_rounded, size: 18),
-                          label: const Text('Last 5'),
-                          onPressed: isGenerating
+                        _Preset(
+                          icon: Icons.last_page_rounded,
+                          label: 'Last 5',
+                          onTap: isGenerating
                               ? null
                               : () => _setRange(
                                   (_maxPage - 4).clamp(_minPage, _maxPage),
@@ -148,7 +135,7 @@ class _GenerateQuestionsScreenState
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     Row(
                       children: [
                         Expanded(
@@ -172,51 +159,88 @@ class _GenerateQuestionsScreenState
                         ),
                       ],
                     ),
+                    const SizedBox(height: 18),
+                    _SectionHeader(title: 'Number of questions'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final n in [3, 5, 10, 15, 20])
+                          _CountChip(
+                            value: n,
+                            selected: int.tryParse(_countCtrl.text) == n,
+                            onTap: isGenerating
+                                ? null
+                                : () => setState(
+                                    () => _countCtrl.text = n.toString(),
+                                  ),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     _NumberField(
                       controller: _countCtrl,
-                      label: 'Number of questions',
+                      label: 'Custom count',
                       helperText: '1-30 recommended',
                       enabled: !isGenerating,
                       validator: _validateQuestionCount,
+                      onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 22),
-                    Text(
-                      'Available pages',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    _SectionHeader(title: 'Available pages'),
                     const SizedBox(height: 10),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 300),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: colorScheme.outlineVariant),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainer,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
                         child: ListView.separated(
                           shrinkWrap: true,
+                          padding: EdgeInsets.zero,
                           itemCount: _pages.length,
-                          separatorBuilder: (context, index) => Divider(
-                            height: 1,
-                            color: colorScheme.outlineVariant,
-                          ),
+                          separatorBuilder: (context, index) =>
+                              Divider(height: 1, color: scheme.outlineVariant),
                           itemBuilder: (context, index) {
                             final page = _pages[index];
                             return ListTile(
                               dense: true,
-                              leading: CircleAvatar(
-                                radius: 17,
-                                child: Text(page.pageNumber.toString()),
+                              leading: Container(
+                                width: 36,
+                                height: 36,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: scheme.primaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  page.pageNumber.toString(),
+                                  style: TextStyle(
+                                    color: scheme.onPrimaryContainer,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                  ),
+                                ),
                               ),
                               title: Text(
                                 page.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: scheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                               subtitle: Text(
                                 '${page.chunkCount} chunks • ${page.characterCount} chars',
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
                               ),
                               onTap: isGenerating
                                   ? null
@@ -231,36 +255,94 @@ class _GenerateQuestionsScreenState
                     ),
                     if (studyState.error != null) ...[
                       const SizedBox(height: 16),
-                      Text(
-                        studyState.error!,
-                        style: TextStyle(color: colorScheme.error),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: scheme.errorContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.error_outline_rounded,
+                              color: scheme.onErrorContainer,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                studyState.error!,
+                                style: TextStyle(
+                                  color: scheme.onErrorContainer,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                     if (isGenerating) ...[
                       const SizedBox(height: 16),
-                      LinearProgressIndicator(color: colorScheme.primary),
-                      const SizedBox(height: 8),
-                      Text(
-                        studyState.generatingProgress ??
-                            'Generating questions...',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainer,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: scheme.outlineVariant),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: scheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Generating...',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: scheme.onSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            LinearProgressIndicator(
+                              color: scheme.primary,
+                              backgroundColor: scheme.surfaceContainerHigh,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              studyState.generatingProgress ??
+                                  'Working on it...',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                     const SizedBox(height: 22),
                     FilledButton.icon(
                       onPressed: isGenerating ? null : _generateQuestions,
-                      icon: isGenerating
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome_rounded),
-                      label: Text(isGenerating ? 'Generating...' : 'Generate'),
+                      icon: const Icon(Icons.auto_awesome_rounded),
+                      label: Text(
+                        isGenerating ? 'Generating...' : 'Generate quiz',
+                      ),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ],
@@ -379,6 +461,104 @@ class _PageSummary {
   final int characterCount;
 }
 
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      title,
+      style: theme.textTheme.titleMedium?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _Preset extends StatelessWidget {
+  const _Preset({required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primaryContainer,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: scheme.onPrimaryContainer),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: scheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CountChip extends StatelessWidget {
+  const _CountChip({
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+  final int value;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bg = selected ? scheme.primary : scheme.surfaceContainer;
+    final fg = selected ? scheme.onPrimary : scheme.onSurface;
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? scheme.primary : scheme.outlineVariant,
+            ),
+          ),
+          child: Text(
+            value.toString(),
+            style: TextStyle(
+              color: fg,
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _NumberField extends StatelessWidget {
   const _NumberField({
     required this.controller,
@@ -386,6 +566,7 @@ class _NumberField extends StatelessWidget {
     required this.helperText,
     required this.enabled,
     required this.validator,
+    this.onChanged,
   });
 
   final TextEditingController controller;
@@ -393,28 +574,25 @@ class _NumberField extends StatelessWidget {
   final String helperText;
   final bool enabled;
   final String? Function(String?) validator;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
       enabled: enabled,
-      decoration: InputDecoration(
-        labelText: label,
-        helperText: helperText,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: InputDecoration(labelText: label, helperText: helperText),
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       validator: validator,
+      onChanged: onChanged,
     );
   }
 }
 
-class _MaterialSummaryCard extends StatelessWidget {
-  const _MaterialSummaryCard({
+class _SummaryHero extends StatelessWidget {
+  const _SummaryHero({
     required this.filename,
-    required this.type,
     required this.pageCount,
     required this.chunkCount,
     required this.characterCount,
@@ -423,7 +601,6 @@ class _MaterialSummaryCard extends StatelessWidget {
   });
 
   final String filename;
-  final String type;
   final int pageCount;
   final int chunkCount;
   final int characterCount;
@@ -433,53 +610,74 @@ class _MaterialSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final scheme = theme.colorScheme;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: colorScheme.outlineVariant),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.primary, Color(0xFF4C1D95)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primary.withValues(alpha: 0.25),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            filename,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '$type • pages $minPage-$maxPage',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 14),
           Row(
             children: [
-              Expanded(
-                child: _SummaryMetric(
-                  label: 'Pages',
-                  value: pageCount.toString(),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.onPrimary.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.auto_awesome_rounded,
+                  color: scheme.onPrimary,
                 ),
               ),
+              const SizedBox(width: 12),
               Expanded(
-                child: _SummaryMetric(
-                  label: 'Chunks',
-                  value: chunkCount.toString(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      filename,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: scheme.onPrimary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Pages $minPage-$maxPage',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onPrimary.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Expanded(
-                child: _SummaryMetric(
-                  label: 'Chars',
-                  value: _compactNumber(characterCount),
-                ),
-              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _MetricChip(value: pageCount.toString(), label: 'Pages'),
+              const SizedBox(width: 8),
+              _MetricChip(value: chunkCount.toString(), label: 'Chunks'),
+              const SizedBox(width: 8),
+              _MetricChip(value: _compact(characterCount), label: 'Chars'),
             ],
           ),
         ],
@@ -487,70 +685,91 @@ class _MaterialSummaryCard extends StatelessWidget {
     );
   }
 
-  static String _compactNumber(int value) {
-    if (value >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
-    if (value >= 1000) return '${(value / 1000).toStringAsFixed(1)}K';
-    return value.toString();
+  static String _compact(int v) {
+    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toString();
   }
 }
 
-class _SummaryMetric extends StatelessWidget {
-  const _SummaryMetric({required this.label, required this.value});
-
-  final String label;
+class _MetricChip extends StatelessWidget {
+  const _MetricChip({required this.value, required this.label});
   final String value;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
+    final scheme = theme.colorScheme;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        decoration: BoxDecoration(
+          color: scheme.onPrimary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
         ),
-        Text(label, style: theme.textTheme.labelSmall),
-      ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: scheme.onPrimary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onPrimary.withValues(alpha: 0.85),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class _EmptyTrainingData extends StatelessWidget {
-  const _EmptyTrainingData({required this.filename});
-
+class _EmptyContent extends StatelessWidget {
+  const _EmptyContent({required this.filename});
   final String filename;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final scheme = theme.colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.find_in_page_outlined,
-              size: 54,
-              color: colorScheme.primary,
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.find_in_page_outlined,
+                size: 42,
+                color: scheme.onPrimaryContainer,
+              ),
             ),
             const SizedBox(height: 14),
             Text(
-              'No readable training data',
+              'No readable content',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              '$filename does not have saved text chunks yet.',
+              '$filename does not have parsed text yet.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],

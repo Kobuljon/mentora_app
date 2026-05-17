@@ -83,8 +83,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 _SevenDayCard(data: data),
                 const SizedBox(height: 16),
                 _RecentSessionsCard(data: data),
-                const SizedBox(height: 16),
-                _MaterialBreakdownCard(data: data),
               ],
             ),
           );
@@ -379,75 +377,6 @@ class _RecentSessionsCard extends StatelessWidget {
                   ),
                   trailing: Text(
                     '${(session.accuracy * 100).toStringAsFixed(0)}%',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MaterialBreakdownCard extends StatelessWidget {
-  const _MaterialBreakdownCard({required this.data});
-
-  final ProgressAnalytics data;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Card(
-      color: scheme.surfaceContainerHigh,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Top materials',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: scheme.onSurface,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (data.materialBreakdown.isEmpty)
-              Text(
-                'Import materials to start tracking progress.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              )
-            else
-              for (final item in data.materialBreakdown)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  leading: Icon(
-                    Icons.menu_book_rounded,
-                    color: scheme.secondary,
-                  ),
-                  title: Text(
-                    item.title,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: scheme.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    '${item.sessionCount} sessions • ${item.questionCount} questions',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  trailing: Text(
-                    '${(item.accuracy * 100).toStringAsFixed(0)}%',
                     style: theme.textTheme.labelLarge?.copyWith(
                       color: scheme.primary,
                       fontWeight: FontWeight.w700,

@@ -1,11 +1,176 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:mentora_app/core/database/database_helper.dart';
 import 'package:mentora_app/core/theme/app_theme.dart';
 import 'package:mentora_app/features/chat/screens/chat_screen.dart';
 import 'package:mentora_app/features/library/screens/import_materials_screen.dart';
 import 'package:mentora_app/features/library/screens/library_screen.dart';
+import 'package:mentora_app/features/library/screens/material_options_screen.dart';
+import 'package:mentora_app/features/study/screens/study_session_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  Future<List<Map<String, dynamic>>>? _recentBundlesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshRecent();
+  }
+
+  void _refreshRecent() {
+    setState(() {
+      _recentBundlesFuture = DatabaseHelper.instance.getRecentQuestionBundles(
+        limit: 5,
+      );
+    });
+  }
+
+  Future<void> _openQuizPicker(BuildContext context) async {
+    final materials = await DatabaseHelper.instance.getAllMaterials();
+    if (!context.mounted) return;
+    final processed = materials
+        .where(
+          (m) => (m[DatabaseHelper.columnStatus] ?? 'processed') == 'processed',
+        )
+        .toList();
+
+    if (processed.isEmpty) {
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(builder: (_) => const ImportMaterialsScreen()),
+          )
+          .then((_) => _refreshRecent());
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final scheme = theme.colorScheme;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Choose a material',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Pick a source to generate a new quiz from.',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 14),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 360),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: processed.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final m = processed[i];
+                      return Material(
+                        color: scheme.surfaceContainer,
+                        borderRadius: BorderRadius.circular(16),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            Navigator.of(context)
+                                .push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        MaterialOptionsScreen(material: m),
+                                  ),
+                                )
+                                .then((_) => _refreshRecent());
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: scheme.primaryContainer,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    Icons.menu_book_outlined,
+                                    color: scheme.onPrimaryContainer,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        m[DatabaseHelper.columnFilename]
+                                                ?.toString() ??
+                                            'Untitled',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: scheme.onSurface,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      Text(
+                                        (m[DatabaseHelper.columnType] ?? '')
+                                            .toString()
+                                            .toUpperCase(),
+                                        style: TextStyle(
+                                          color: scheme.onSurfaceVariant,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.6,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (mounted) _refreshRecent();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,23 +187,23 @@ class HomeScreen extends StatelessWidget {
         foregroundColor: AppTheme.textLight,
         iconBackground: const Color(0x33FFFFFF),
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ImportMaterialsScreen()),
-          );
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (_) => const ImportMaterialsScreen(),
+                ),
+              )
+              .then((_) => _refreshRecent());
         },
       ),
       _HomeAction(
-        title: 'Create Quiz',
-        subtitle: 'Based on your\nsources.',
+        title: 'Start a\nQuiz',
+        subtitle: 'Pick a source,\nbegin in one tap.',
         icon: Icons.quiz_outlined,
         cardColor: AppTheme.secondary,
         foregroundColor: AppTheme.textLight,
         iconBackground: const Color(0x33FFFFFF),
-        onTap: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const LibraryScreen()));
-        },
+        onTap: () => _openQuizPicker(context),
       ),
       _HomeAction(
         title: 'Ask your\nTutor',
@@ -111,16 +276,42 @@ class HomeScreen extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 32),
-                Text(
-                  'Recent Studies',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Recent Quizzes',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: scheme.onSurface,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _openQuizPicker(context),
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      label: const Text(
+                        'New quiz',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                const _RecentStudiesCard(),
+                const SizedBox(height: 12),
+                _RecentQuizzesSection(
+                  future: _recentBundlesFuture,
+                  onChanged: _refreshRecent,
+                  onBrowseLibrary: () {
+                    Navigator.of(context)
+                        .push(
+                          MaterialPageRoute(
+                            builder: (_) => const LibraryScreen(),
+                          ),
+                        )
+                        .then((_) => _refreshRecent());
+                  },
+                ),
                 const SizedBox(height: 12),
                 Center(
                   child: TextButton(
@@ -370,44 +561,229 @@ class _QuickActionCard extends StatelessWidget {
   }
 }
 
-class _RecentStudiesCard extends StatelessWidget {
-  const _RecentStudiesCard();
+class _RecentQuizzesSection extends StatelessWidget {
+  const _RecentQuizzesSection({
+    required this.future,
+    required this.onChanged,
+    required this.onBrowseLibrary,
+  });
+
+  final Future<List<Map<String, dynamic>>>? future;
+  final VoidCallback onChanged;
+  final VoidCallback onBrowseLibrary;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _emptyShell(
+            scheme,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          );
+        }
+        final bundles = (snapshot.data ?? []).where((b) {
+          try {
+            final qs = jsonDecode(b['questions']?.toString() ?? '[]');
+            return qs is List && qs.isNotEmpty;
+          } catch (_) {
+            return false;
+          }
+        }).toList();
+
+        if (bundles.isEmpty) {
+          return _emptyShell(
+            scheme,
+            child: Column(
+              children: [
+                Container(
+                  width: 140,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  'No quizzes yet.\nGenerate one from a material to start practicing.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 15,
+                    height: 1.25,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: onBrowseLibrary,
+                  icon: const Icon(Icons.library_books_outlined),
+                  label: const Text('Open library'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            for (final b in bundles) ...[
+              _RecentQuizCard(bundle: b, onChanged: onChanged),
+              const SizedBox(height: 10),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _emptyShell(ColorScheme scheme, {required Widget child}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 34, 24, 30),
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
       decoration: BoxDecoration(
         color: scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: scheme.outlineVariant),
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 140,
-            height: 28,
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(20),
-            ),
+      child: child,
+    );
+  }
+}
+
+class _RecentQuizCard extends StatelessWidget {
+  const _RecentQuizCard({required this.bundle, required this.onChanged});
+
+  final Map<String, dynamic> bundle;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final filename =
+        bundle['material_filename']?.toString() ?? 'Untitled material';
+    final createdAtMs = bundle['created_at'] as int?;
+    final createdAt = createdAtMs != null
+        ? DateFormat.yMMMd().add_Hm().format(
+            DateTime.fromMillisecondsSinceEpoch(createdAtMs),
+          )
+        : '';
+    int questionCount = 0;
+    try {
+      final qs = jsonDecode(bundle['questions']?.toString() ?? '[]');
+      if (qs is List) questionCount = qs.length;
+    } catch (_) {}
+
+    String pageRange = '';
+    try {
+      final params = jsonDecode(bundle['params']?.toString() ?? '{}');
+      if (params is Map) {
+        final from = params['pageFrom'];
+        final to = params['pageTo'];
+        if (from != null && to != null) {
+          pageRange = from == to ? 'Page $from' : 'Pages $from\u2013$to';
+        }
+      }
+    } catch (_) {}
+
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () {
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (_) => StudySessionScreen(bundle: bundle),
+                ),
+              )
+              .then((_) => onChanged());
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.quiz_outlined,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      filename,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        '$questionCount question${questionCount == 1 ? '' : 's'}',
+                        if (pageRange.isNotEmpty) pageRange,
+                        if (createdAt.isNotEmpty) createdAt,
+                      ].join('  •  '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.of(context)
+                      .push(
+                        MaterialPageRoute(
+                          builder: (_) => StudySessionScreen(bundle: bundle),
+                        ),
+                      )
+                      .then((_) => onChanged());
+                },
+                child: const Text('Start'),
+              ),
+            ],
           ),
-          const SizedBox(height: 32),
-          Text(
-            'Your recent documents and chats will\nappear here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: 16,
-              height: 1.18,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
