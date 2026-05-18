@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:isolate';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -6,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import 'package:path/path.dart' as p;
 import 'package:archive/archive_io.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 import '../../../core/services/sherpa_onnx_model_service.dart';
@@ -24,7 +27,6 @@ class MaterialProcessorService {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
   bool _isInit = false;
-  bool _sherpaBindingsReady = false;
   static final _wordPattern = RegExp(r"[A-Za-z][A-Za-z'-]{2,}");
   static final _symbolPattern = RegExp(r'''[^A-Za-z0-9\s.,;:!?'"()\-/]''');
   static final _vowelPattern = RegExp(r'[aeiou]', caseSensitive: false);
@@ -319,6 +321,7 @@ class MaterialProcessorService {
     final backend = await _getAudioBackend();
     String transcript;
     File? sherpaInputFile;
+    Timer? transcriptionProgressTimer;
 
     if (backend == AudioTranscriptionBackend.sherpaOnnx) {
       try {
@@ -331,7 +334,14 @@ class MaterialProcessorService {
           100,
           35,
         );
-        sherpaInputFile = await _prepareAudioForSherpa(file);
+        sherpaInputFile = await _prepareAudioForSherpa(file).timeout(
+          const Duration(seconds: 75),
+          onTimeout: () {
+            throw TimeoutException(
+              'Audio conversion took too long. Try a shorter audio file or WAV format.',
+            );
+          },
+        );
 
         if (onProgress != null) {
           onProgress('Transcribing with Sherpa ONNX...', 0.6);
@@ -342,10 +352,32 @@ class MaterialProcessorService {
           100,
           60,
         );
-        transcript = await _transcribeAudioWithSherpaOnnx(sherpaInputFile);
+        if (onProgress != null) {
+          var displayedProgress = 0.6;
+          transcriptionProgressTimer = Timer.periodic(
+            const Duration(milliseconds: 900),
+            (_) {
+              displayedProgress = math.min(0.88, displayedProgress + 0.02);
+              onProgress(
+                'Transcribing with Sherpa ONNX... this can take a while for long audio.',
+                displayedProgress,
+              );
+            },
+          );
+        }
+        transcript = await _transcribeAudioWithSherpaOnnx(sherpaInputFile)
+            .timeout(
+              const Duration(minutes: 3),
+              onTimeout: () {
+                throw TimeoutException(
+                  'Audio transcription took too long. Try a shorter clip.',
+                );
+              },
+            );
       } catch (error) {
         transcript = await _buildPlaceholderAudioTranscript(file, error);
       } finally {
+        transcriptionProgressTimer?.cancel();
         if (sherpaInputFile != null && sherpaInputFile.path != file.path) {
           final tempFile = sherpaInputFile;
           if (tempFile.existsSync()) {
@@ -417,15 +449,17 @@ class MaterialProcessorService {
   }
 
   Future<AudioTranscriptionBackend> _getAudioBackend() async {
-    return AudioTranscriptionBackend.sherpaOnnx;
+    final preferences = await SharedPreferences.getInstance();
+    final backendName = preferences.getString(
+      audioTranscriptionBackendPreferenceKey,
+    );
+    for (final backend in AudioTranscriptionBackend.values) {
+      if (backend.name == backendName) return backend;
+    }
+    return AudioTranscriptionBackend.placeholder;
   }
 
   Future<String> _transcribeAudioWithSherpaOnnx(File file) async {
-    if (!_sherpaBindingsReady) {
-      sherpa.initBindings();
-      _sherpaBindingsReady = true;
-    }
-
     final modelStatus = await SherpaOnnxModelService.instance.getStatus();
     if (!modelStatus.isReady) {
       throw FileSystemException(
@@ -446,73 +480,95 @@ class MaterialProcessorService {
       SherpaOnnxModelService.tokensFileName,
     );
 
-    final whisperConfig = sherpa.OfflineWhisperModelConfig(
-      encoder: encoderPath,
-      decoder: decoderPath,
-      language: 'en',
-      task: 'transcribe',
+    return Isolate.run(
+      () => _runSherpaTranscription(
+        _SherpaTranscriptionRequest(
+          audioFilePath: file.path,
+          encoderPath: encoderPath,
+          decoderPath: decoderPath,
+          tokensPath: tokensPath,
+        ),
+      ),
     );
-    final modelConfig = sherpa.OfflineModelConfig(
-      whisper: whisperConfig,
-      tokens: tokensPath,
-      modelType: 'whisper',
-      numThreads: 2,
-      debug: false,
-    );
-    final recognizer = sherpa.OfflineRecognizer(
-      sherpa.OfflineRecognizerConfig(model: modelConfig),
-    );
-
-    sherpa.OfflineStream? stream;
-    try {
-      final wave = sherpa.readWave(file.path);
-      if (wave.sampleRate <= 0 || wave.samples.isEmpty) {
-        throw const FormatException(
-          'Could not decode WAV file for Sherpa ONNX transcription.',
-        );
-      }
-
-      final chunkTexts = <String>[];
-      final chunkDurationSeconds = 20;
-      final samplesPerChunk = wave.sampleRate * chunkDurationSeconds;
-
-      for (
-        var start = 0;
-        start < wave.samples.length;
-        start += samplesPerChunk
-      ) {
-        final end = math.min(start + samplesPerChunk, wave.samples.length);
-        final chunkSamples = Float32List.sublistView(wave.samples, start, end);
-
-        stream = recognizer.createStream();
-        stream.acceptWaveform(
-          samples: chunkSamples,
-          sampleRate: wave.sampleRate,
-        );
-        recognizer.decode(stream);
-
-        final text = recognizer.getResult(stream).text.trim();
-        if (text.isNotEmpty) {
-          chunkTexts.add(text);
-        }
-
-        stream.free();
-        stream = null;
-      }
-
-      final text = chunkTexts.join(' ').trim();
-      if (text.isEmpty) {
-        throw const FormatException(
-          'Sherpa ONNX returned an empty transcript.',
-        );
-      }
-      return text;
-    } finally {
-      stream?.free();
-      recognizer.free();
-    }
   }
+}
 
+class _SherpaTranscriptionRequest {
+  const _SherpaTranscriptionRequest({
+    required this.audioFilePath,
+    required this.encoderPath,
+    required this.decoderPath,
+    required this.tokensPath,
+  });
+
+  final String audioFilePath;
+  final String encoderPath;
+  final String decoderPath;
+  final String tokensPath;
+}
+
+String _runSherpaTranscription(_SherpaTranscriptionRequest request) {
+  sherpa.initBindings();
+
+  final whisperConfig = sherpa.OfflineWhisperModelConfig(
+    encoder: request.encoderPath,
+    decoder: request.decoderPath,
+    language: 'en',
+    task: 'transcribe',
+  );
+  final modelConfig = sherpa.OfflineModelConfig(
+    whisper: whisperConfig,
+    tokens: request.tokensPath,
+    modelType: 'whisper',
+    numThreads: 2,
+    debug: false,
+  );
+  final recognizer = sherpa.OfflineRecognizer(
+    sherpa.OfflineRecognizerConfig(model: modelConfig),
+  );
+
+  sherpa.OfflineStream? stream;
+  try {
+    final wave = sherpa.readWave(request.audioFilePath);
+    if (wave.sampleRate <= 0 || wave.samples.isEmpty) {
+      throw const FormatException(
+        'Could not decode WAV file for Sherpa ONNX transcription.',
+      );
+    }
+
+    final chunkTexts = <String>[];
+    final chunkDurationSeconds = 20;
+    final samplesPerChunk = wave.sampleRate * chunkDurationSeconds;
+
+    for (var start = 0; start < wave.samples.length; start += samplesPerChunk) {
+      final end = math.min(start + samplesPerChunk, wave.samples.length);
+      final chunkSamples = Float32List.sublistView(wave.samples, start, end);
+
+      stream = recognizer.createStream();
+      stream.acceptWaveform(samples: chunkSamples, sampleRate: wave.sampleRate);
+      recognizer.decode(stream);
+
+      final text = recognizer.getResult(stream).text.trim();
+      if (text.isNotEmpty) {
+        chunkTexts.add(text);
+      }
+
+      stream.free();
+      stream = null;
+    }
+
+    final text = chunkTexts.join(' ').trim();
+    if (text.isEmpty) {
+      throw const FormatException('Sherpa ONNX returned an empty transcript.');
+    }
+    return text;
+  } finally {
+    stream?.free();
+    recognizer.free();
+  }
+}
+
+extension _MaterialProcessorServiceTextUtils on MaterialProcessorService {
   Future<String> _buildPlaceholderAudioTranscript(
     File file,
     Object? failure,
@@ -552,9 +608,11 @@ class MaterialProcessorService {
   }
 
   double _textQualityScore(String text) {
-    final words = _wordPattern.allMatches(text).length;
+    final words = MaterialProcessorService._wordPattern.allMatches(text).length;
     final letters = RegExp(r'[A-Za-z]').allMatches(text).length;
-    final symbols = _symbolPattern.allMatches(text).length;
+    final symbols = MaterialProcessorService._symbolPattern
+        .allMatches(text)
+        .length;
     final total = text.trim().length;
     if (total == 0) return 0;
     final letterRatio = letters / total;
@@ -566,8 +624,10 @@ class MaterialProcessorService {
     if (line.length < 3) return false;
 
     final letters = RegExp(r'[A-Za-z]').allMatches(line).length;
-    final words = _wordPattern.allMatches(line).length;
-    final symbols = _symbolPattern.allMatches(line).length;
+    final words = MaterialProcessorService._wordPattern.allMatches(line).length;
+    final symbols = MaterialProcessorService._symbolPattern
+        .allMatches(line)
+        .length;
     final total = line.length;
     final letterRatio = letters / total;
     final symbolRatio = symbols / total;
@@ -576,7 +636,9 @@ class MaterialProcessorService {
     if (symbolRatio > 0.22 && letterRatio < 0.62) return true;
 
     if (letters >= 12) {
-      final vowels = _vowelPattern.allMatches(line).length;
+      final vowels = MaterialProcessorService._vowelPattern
+          .allMatches(line)
+          .length;
       if (vowels / letters < 0.18 && symbolRatio > 0.12) return true;
     }
 

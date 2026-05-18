@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -22,6 +21,7 @@ const _sentinel = Object();
 
 class StudyState {
   final bool isGenerating;
+  final String? generatingMaterialId;
   final String? generatingProgress;
   final String? error;
   final List<Map<String, dynamic>> bundles;
@@ -29,6 +29,7 @@ class StudyState {
 
   StudyState({
     this.isGenerating = false,
+    this.generatingMaterialId,
     this.generatingProgress,
     this.error,
     this.bundles = const [],
@@ -37,6 +38,7 @@ class StudyState {
 
   StudyState copyWith({
     bool? isGenerating,
+    Object? generatingMaterialId = _sentinel,
     Object? generatingProgress = _sentinel,
     String? error,
     List<Map<String, dynamic>>? bundles,
@@ -44,6 +46,9 @@ class StudyState {
   }) {
     return StudyState(
       isGenerating: isGenerating ?? this.isGenerating,
+      generatingMaterialId: identical(generatingMaterialId, _sentinel)
+          ? this.generatingMaterialId
+          : generatingMaterialId as String?,
       generatingProgress: identical(generatingProgress, _sentinel)
           ? this.generatingProgress
           : generatingProgress as String?,
@@ -57,6 +62,8 @@ class StudyState {
 class StudyNotifier extends StateNotifier<StudyState> {
   final AiStudyService _aiService;
   final _uuid = const Uuid();
+  int _generationRunId = 0;
+  String? _activeGenerationMaterialId;
 
   StudyNotifier(this._aiService) : super(StudyState());
 
@@ -64,6 +71,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
     try {
       final bundles = await DatabaseHelper.instance
           .getQuestionBundlesForMaterial(materialId);
+      if (!mounted) return;
       state = state.copyWith(bundles: bundles);
       // Load sessions for all these bundles
       final newSessionsMap = <String, List<Map<String, dynamic>>>{};
@@ -72,8 +80,10 @@ class StudyNotifier extends StateNotifier<StudyState> {
         newSessionsMap[bundleId] = await DatabaseHelper.instance
             .getStudySessionsForBundle(bundleId);
       }
+      if (!mounted) return;
       state = state.copyWith(sessionsByBundle: newSessionsMap);
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(error: e.toString());
     }
   }
@@ -87,18 +97,44 @@ class StudyNotifier extends StateNotifier<StudyState> {
     }
   }
 
+  void cancelGenerationForMaterial(String materialId) {
+    if (_activeGenerationMaterialId != materialId) return;
+    _generationRunId++;
+    _activeGenerationMaterialId = null;
+    state = state.copyWith(
+      isGenerating: false,
+      generatingMaterialId: null,
+      generatingProgress: null,
+      bundles: const [],
+      sessionsByBundle: const {},
+    );
+  }
+
   Future<void> generateQuestions({
     required String materialId,
     required int pageFrom,
     required int pageTo,
     required int count,
   }) async {
-    state = state.copyWith(isGenerating: true, error: null);
+    if (state.isGenerating) {
+      state = state.copyWith(
+        error: 'Finish the current quiz generation before starting another.',
+      );
+      return;
+    }
+    final runId = ++_generationRunId;
+    _activeGenerationMaterialId = materialId;
+    state = state.copyWith(
+      isGenerating: true,
+      generatingMaterialId: materialId,
+      error: null,
+    );
     try {
       // 1. Fetch chunks in page range
       final chunks = await DatabaseHelper.instance.getChunksForMaterial(
         materialId,
       );
+      if (!_isActiveGeneration(runId, materialId)) return;
       final relevantChunks = chunks.where((chunk) {
         final pageNum = chunk[DatabaseHelper.columnPageNumber] as int? ?? 1;
         return pageNum >= pageFrom && pageNum <= pageTo;
@@ -109,10 +145,11 @@ class StudyNotifier extends StateNotifier<StudyState> {
       }
 
       await _aiService.initialize();
-      List<dynamic> allGeneratedQuestions = [];
+      if (!_isActiveGeneration(runId, materialId)) return;
+      List<String> allGeneratedQuestions = [];
 
-      // Safe limit for 4096 tokens is around 12,000 characters
-      const int maxCharsPerBatch = 7500;
+      // Keep local prompts small enough for mobile LiteRT memory pressure.
+      const int maxCharsPerBatch = 1800;
       String currentBatch = "";
 
       // 2. Group text into safe-sized batches
@@ -166,11 +203,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
         batchEndPages.add(currentBatchEndPage);
       }
 
-      // 3. Distribute the requested question count across the batches evenly
-      int baseCountPerBatch = count ~/ textBatches.length;
-      int remainder = count % textBatches.length;
-
-      // 4. Save initial empty bundle to database
+      // 3. Save initial empty bundle to database
       final bundleId = _uuid.v4();
       final params = jsonEncode({
         'pageFrom': pageFrom,
@@ -187,61 +220,32 @@ class StudyNotifier extends StateNotifier<StudyState> {
         DatabaseHelper.columnBundleParams: params,
         DatabaseHelper.columnBundleQuestions: jsonEncode([]),
       });
+      if (!_isActiveGeneration(runId, materialId)) return;
       await loadBundles(materialId);
 
-      // 5. Generate questions for each batch and update bundle
-      for (int i = 0; i < textBatches.length; i++) {
-        // Update UI progress
-        state = state.copyWith(
-          generatingProgress: 'Processing up to page ${batchEndPages[i]}...',
-        );
+      // 4. Use a single compact generation call on local devices. Loading and
+      // decoding the model is the expensive part; repeated calls are painful.
+      if (!_isActiveGeneration(runId, materialId)) return;
+      state = state.copyWith(
+        generatingProgress: 'Generating $count questions...',
+      );
+      final compactContext = _buildCompactQuizContext(textBatches);
+      allGeneratedQuestions = _appendUniqueQuestions(
+        allGeneratedQuestions,
+        await _aiService.generateQuestions(compactContext, count),
+        count,
+      );
+      if (!_isActiveGeneration(runId, materialId)) return;
+      await DatabaseHelper.instance.updateQuestionBundle(bundleId, {
+        DatabaseHelper.columnBundleQuestions: jsonEncode(allGeneratedQuestions),
+      });
+      await loadBundles(materialId);
 
-        // Distribute remainder to the first few batches
-        int questionsToRequest = baseCountPerBatch + (i < remainder ? 1 : 0);
-
-        if (questionsToRequest > 0) {
-          String textContext = textBatches[i];
-
-          bool batchSuccess = false;
-          for (int attempt = 0; attempt < 2 && !batchSuccess; attempt++) {
-            try {
-              if (attempt > 0) {
-                state = state.copyWith(
-                  generatingProgress: 'Retrying page ${batchEndPages[i]}...',
-                );
-              }
-              final batchQuestions = await _aiService.generateQuestions(
-                textContext,
-                questionsToRequest,
-              );
-              allGeneratedQuestions.addAll(batchQuestions);
-              batchSuccess = true;
-            } catch (e) {
-              debugPrint(
-                'Batch $i on page ${batchEndPages[i]} attempt $attempt failed: $e',
-              );
-              if (attempt == 1) {
-                // Both attempts failed, skip this batch
-                debugPrint('Skipping batch $i after 2 failed attempts.');
-              }
-            }
-          }
-
-          // Update bundle in database incrementally
-          await DatabaseHelper.instance.updateQuestionBundle(bundleId, {
-            DatabaseHelper.columnBundleQuestions: jsonEncode(
-              allGeneratedQuestions,
-            ),
-          });
-          // Reload bundles so UI updates with new questions immediately
-          await loadBundles(materialId);
-        }
-      }
-
-      // 6. Dispose engine to free GPU for other features
+      // 5. Dispose engine to free GPU for other features
       await _aiService.dispose();
 
-      // 7. Final reload
+      // 6. Final reload
+      if (!_isActiveGeneration(runId, materialId)) return;
       await loadBundles(materialId);
 
       if (allGeneratedQuestions.isEmpty) {
@@ -250,10 +254,57 @@ class StudyNotifier extends StateNotifier<StudyState> {
         throw Exception('Failed to generate any questions. Please try again.');
       }
     } catch (e) {
-      state = state.copyWith(error: 'Failed to generate questions: $e');
+      if (_isActiveGeneration(runId, materialId)) {
+        state = state.copyWith(error: 'Failed to generate questions: $e');
+      }
     } finally {
-      state = state.copyWith(isGenerating: false, generatingProgress: null);
+      await _aiService.dispose();
+      if (_isActiveGeneration(runId, materialId)) {
+        _activeGenerationMaterialId = null;
+        state = state.copyWith(
+          isGenerating: false,
+          generatingMaterialId: null,
+          generatingProgress: null,
+        );
+      }
     }
+  }
+
+  bool _isActiveGeneration(int runId, String materialId) {
+    return mounted &&
+        _generationRunId == runId &&
+        _activeGenerationMaterialId == materialId;
+  }
+
+  List<String> _appendUniqueQuestions(
+    List<String> existing,
+    List<String> incoming,
+    int limit,
+  ) {
+    final merged = [...existing];
+    final seen = existing.map(_questionFingerprint).toSet();
+    for (final question in incoming) {
+      final normalized = question.trim();
+      if (normalized.isEmpty) continue;
+      if (!seen.add(_questionFingerprint(normalized))) continue;
+      merged.add(normalized);
+      if (merged.length == limit) break;
+    }
+    return merged;
+  }
+
+  String _questionFingerprint(String question) {
+    return question.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+  }
+
+  String _buildCompactQuizContext(List<String> textBatches) {
+    final combined = textBatches.join('\n\n');
+    const maxChars = 2200;
+    if (combined.length <= maxChars) return combined;
+
+    final headLength = maxChars ~/ 2;
+    final tailLength = maxChars - headLength;
+    return '${combined.substring(0, headLength)}\n\n${combined.substring(combined.length - tailLength)}';
   }
 
   Future<Map<String, dynamic>> evaluateSession({

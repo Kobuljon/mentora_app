@@ -42,6 +42,10 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
         _material[DatabaseHelper.columnFilename] as String? ?? 'Material';
     final type = _material[DatabaseHelper.columnType] as String? ?? 'file';
     final studyState = ref.watch(studyProvider);
+    final materialId = _material[DatabaseHelper.columnId].toString();
+    final isGeneratingThisMaterial =
+        studyState.isGenerating &&
+        studyState.generatingMaterialId == materialId;
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -78,9 +82,9 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
             icon: Icons.auto_awesome_rounded,
             color: AppTheme.primary,
             foreground: AppTheme.textLight,
-            busy: studyState.isGenerating,
+            busy: isGeneratingThisMaterial,
             busyLabel: studyState.generatingProgress ?? 'Generating...',
-            onTap: studyState.isGenerating
+            onTap: isGeneratingThisMaterial
                 ? null
                 : () => Navigator.push(
                     context,
@@ -97,12 +101,16 @@ class _MaterialOptionsScreenState extends ConsumerState<MaterialOptionsScreen> {
             icon: Icons.menu_book_rounded,
             color: AppTheme.secondary,
             foreground: AppTheme.textLight,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MaterialContentScreen(material: _material),
-              ),
-            ),
+            onTap: () async {
+              final deleted = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MaterialContentScreen(material: _material),
+                ),
+              );
+              if (!context.mounted || deleted != true) return;
+              Navigator.pop(context);
+            },
           ),
           if (studyState.error != null) ...[
             const SizedBox(height: 16),

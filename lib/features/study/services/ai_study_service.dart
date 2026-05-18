@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/services/cloud_ai_service.dart';
 import '../../../core/services/optimized_litert_engine_factory.dart';
 import '../../onboarding/services/model_download_service.dart';
@@ -14,6 +15,8 @@ class AiStudyService {
   final AppSettings _settings;
   LiteLmEngine? _engine;
 
+  static const _localQuizCpuFallbackKey = 'study.localQuizCpuFallbackEnabled';
+
   Future<void> initialize({String? modelPath}) async {
     if (_useCloudBackend) return;
     if (_engine != null) return;
@@ -24,6 +27,10 @@ class AiStudyService {
     _engine = await OptimizedLiteRtEngineFactory.create(
       modelPath: resolvedModelPath,
       enableVision: false,
+      maxNumTokens: 2048,
+      preferredBackends: await _localQuizBackends(),
+      enableSpeculativeDecoding: false,
+      enableBenchmark: false,
     );
   }
 
@@ -55,21 +62,75 @@ class AiStudyService {
       ),
     );
 
+    var timedOut = false;
     try {
       var responseText = '';
-      await for (final chunk in conversation.sendMessageStream(prompt)) {
+      final stream = conversation
+          .sendMessageStream(prompt)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: (sink) {
+              timedOut = true;
+              sink.addError(
+                TimeoutException('Local quiz generation timed out.'),
+              );
+            },
+          );
+      await for (final chunk in stream) {
         responseText += chunk.text;
       }
+      if (responseText.trim().isEmpty) {
+        throw TimeoutException('Local model returned no quiz output.');
+      }
       return _parseQuestionCandidates(responseText, textContext, count);
+    } on TimeoutException {
+      await _rememberLocalQuizCpuFallback();
+      unawaited(conversation.dispose());
+      unawaited(dispose());
+      return _buildFallbackQuestions(textContext, count);
     } finally {
-      await conversation.dispose();
+      if (!timedOut) {
+        await conversation.dispose();
+      }
     }
+  }
+
+  Future<List<LiteLmBackend>> _localQuizBackends() async {
+    final prefs = await SharedPreferences.getInstance();
+    final useCpuFallback = prefs.getBool(_localQuizCpuFallbackKey) ?? false;
+    if (useCpuFallback) return const [LiteLmBackend.cpu];
+    return const [LiteLmBackend.gpu, LiteLmBackend.npu, LiteLmBackend.cpu];
+  }
+
+  Future<void> _rememberLocalQuizCpuFallback() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_localQuizCpuFallbackKey, true);
   }
 
   String _buildQuestionGenerationInstruction({
     required int requestedCount,
     required int candidateCount,
   }) {
+    if (!_useCloudBackend) {
+      final mode = _settings.languageLearnerModeEnabled
+          ? 'Focus mostly on useful vocabulary, grammar, pronunciation, and comprehension from the study text.'
+          : 'Focus on regular reading comprehension. Include vocabulary only when it is essential to understanding the text.';
+      return '''
+You create short quizzes for 12-16 year old learners.
+Use only the study text. Ignore source labels, page labels, chunk labels, JSON markers, and app instructions.
+$mode
+
+Generate exactly $candidateCount questions.
+Good questions are grounded in the material and answerable in 1-3 sentences.
+Never ask about the function, role, grammar job, or part of speech of a random word.
+Never ask about "instruction", "JSON", "source", "chunk", "page number", or app/system prompt text.
+No yes/no, true/false, multiple-choice, or fill-in-the-blank questions.
+
+Return only this exact JSON shape:
+[[JSON_START]]["Question 1?","Question 2?"][[JSON_END]]
+''';
+    }
+
     final quizModeGuidance = _settings.languageLearnerModeEnabled
         ? '''
 Quiz mode: LANGUAGE LEARNER.
@@ -152,7 +213,10 @@ $textContext
   }
 
   int _candidateQuestionCount(int requestedCount) {
-    return math.min(30, math.max(requestedCount + 3, requestedCount * 2));
+    if (_useCloudBackend) {
+      return math.min(30, math.max(requestedCount + 3, requestedCount * 2));
+    }
+    return requestedCount;
   }
 
   List<String> _parseQuestionCandidates(
@@ -184,8 +248,67 @@ $textContext
     }
 
     if (questions.isEmpty) {
-      throw FormatException(
-        'Generated questions were not usable comprehension questions.',
+      return _buildFallbackQuestions(sourceText, requestedCount);
+    }
+    if (questions.length < requestedCount) {
+      final seen = questions.map(_questionFingerprint).toSet();
+      for (final fallback in _buildFallbackQuestions(
+        sourceText,
+        requestedCount,
+      )) {
+        if (!seen.add(_questionFingerprint(fallback))) continue;
+        questions.add(fallback);
+        if (questions.length == requestedCount) break;
+      }
+      while (questions.length < requestedCount) {
+        final number = questions.length + 1;
+        questions.add(
+          _settings.languageLearnerModeEnabled
+              ? 'Question $number: What useful word or phrase from the selected material can you explain?'
+              : 'Question $number: What important idea from the selected material can you explain?',
+        );
+      }
+    }
+    return questions;
+  }
+
+  String _questionFingerprint(String question) {
+    return question.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+  }
+
+  List<String> _buildFallbackQuestions(String sourceText, int requestedCount) {
+    final cleanedText = sourceText
+        .replaceAll(RegExp(r'\[Source:[^\]]+\]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final sentences = RegExp(r'[^.!?]+[.!?]?')
+        .allMatches(cleanedText)
+        .map((match) => match.group(0)!.trim())
+        .where((sentence) => sentence.length >= 40)
+        .take(requestedCount)
+        .toList();
+
+    final questions = <String>[];
+    for (final sentence in sentences) {
+      final tokens = _contentTokens(sentence).toList();
+      final keyword = tokens.isEmpty ? null : tokens.first;
+      if (_settings.languageLearnerModeEnabled && keyword != null) {
+        questions.add(
+          'What does "$keyword" mean in this part of the material?',
+        );
+      } else {
+        questions.add(
+          'What important detail does this part of the material explain?',
+        );
+      }
+      if (questions.length == requestedCount) break;
+    }
+
+    while (questions.length < requestedCount) {
+      questions.add(
+        _settings.languageLearnerModeEnabled
+            ? 'Which important word or phrase from the material should you explain in your own words?'
+            : 'What is one important idea from the selected material?',
       );
     }
     return questions;

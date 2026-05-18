@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/brand_logo.dart';
+import '../../study/providers/study_provider.dart';
 import 'import_materials_screen.dart';
 import 'material_options_screen.dart';
 
@@ -101,6 +102,51 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     _loadMaterials();
   }
 
+  Future<void> _deleteMaterial(Map<String, dynamic> material) async {
+    final materialId = material[DatabaseHelper.columnId] as String?;
+    if (materialId == null || materialId.isEmpty) return;
+
+    final currentName =
+        material[DatabaseHelper.columnFilename] as String? ?? 'Material';
+
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final scheme = Theme.of(dialogContext).colorScheme;
+        return AlertDialog(
+          title: const Text('Delete material?'),
+          content: Text(
+            'Delete "$currentName" and all of its excerpts and quiz history?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.tonal(
+              style: FilledButton.styleFrom(
+                backgroundColor: scheme.errorContainer,
+                foregroundColor: scheme.onErrorContainer,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true || !mounted) return;
+
+    ref.read(studyProvider.notifier).cancelGenerationForMaterial(materialId);
+    await DatabaseHelper.instance.deleteMaterial(materialId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Material deleted')));
+    await _loadMaterials();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -156,6 +202,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             _loadMaterials();
                           },
                           onRename: () => _renameMaterial(material),
+                          onDelete: () => _deleteMaterial(material),
                         ),
                       ),
                   ],
@@ -319,11 +366,13 @@ class _MaterialCard extends StatelessWidget {
     required this.material,
     required this.onTap,
     required this.onRename,
+    required this.onDelete,
   });
 
   final Map<String, dynamic> material;
   final VoidCallback onTap;
   final VoidCallback onRename;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -410,9 +459,20 @@ class _MaterialCard extends StatelessWidget {
                 ),
                 onSelected: (value) {
                   if (value == 'rename') onRename();
+                  if (value == 'delete') onDelete();
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem<String>(value: 'rename', child: Text('Rename')),
+                itemBuilder: (context) => [
+                  const PopupMenuItem<String>(
+                    value: 'rename',
+                    child: Text('Rename'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Text(
+                      'Delete',
+                      style: TextStyle(color: scheme.error),
+                    ),
+                  ),
                 ],
               ),
             ],

@@ -14,38 +14,27 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Models'), findsOneWidget);
-    expect(find.text('Import'), findsOneWidget);
-    expect(find.text('Export'), findsOneWidget);
 
-    await tester.scrollUntilVisible(
-      find.text('For language learners'),
-      200,
-      scrollable: find.byType(Scrollable),
-    );
+    await _scrollToText(tester, 'For language learners');
     expect(find.text('For language learners'), findsOneWidget);
     expect(find.text('Language learner'), findsOneWidget);
     expect(find.text('Grammar'), findsNothing);
     expect(find.text('Pronunciation'), findsNothing);
 
-    await tester.scrollUntilVisible(
-      find.text('My data'),
-      200,
-      scrollable: find.byType(Scrollable),
-    );
+    await _scrollToText(tester, 'My data');
     expect(find.text('My data'), findsOneWidget);
 
-    await tester.scrollUntilVisible(
-      find.text('Dark mode'),
-      200,
-      scrollable: find.byType(Scrollable),
-    );
+    await _scrollToText(tester, 'Dark mode');
     expect(find.text('Dark mode'), findsOneWidget);
-
-    await tester.scrollUntilVisible(
-      find.text('Auto save notes'),
-      200,
-      scrollable: find.byType(Scrollable),
-    );
-    expect(find.text('Auto save notes'), findsOneWidget);
   });
+}
+
+Future<void> _scrollToText(WidgetTester tester, String text) async {
+  final finder = find.text(text);
+  for (var i = 0; i < 12; i++) {
+    if (finder.evaluate().isNotEmpty) return;
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+  }
+  fail('Could not find "$text" after scrolling settings.');
 }

@@ -11,10 +11,13 @@ class OptimizedLiteRtEngineFactory {
     bool enableVision = true,
     int maxNumTokens = 8192,
     int maxNumImages = 1,
+    List<LiteLmBackend>? preferredBackends,
+    bool? enableSpeculativeDecoding,
+    bool enableBenchmark = false,
   }) async {
     final cacheDir = await getTemporaryDirectory();
     final cpuThreads = Platform.numberOfProcessors.clamp(1, 16).toInt();
-    final backends = _preferredBackends();
+    final backends = preferredBackends ?? _preferredBackends();
     final failures = <String>[];
 
     for (final backend in backends) {
@@ -28,7 +31,8 @@ class OptimizedLiteRtEngineFactory {
             cpuThreads: backend == LiteLmBackend.cpu ? cpuThreads : null,
             maxNumTokens: maxNumTokens,
             maxNumImages: enableVision ? maxNumImages : null,
-            enableBenchmark: true,
+            enableSpeculativeDecoding: enableSpeculativeDecoding,
+            enableBenchmark: enableBenchmark,
           ),
         );
       } catch (error) {

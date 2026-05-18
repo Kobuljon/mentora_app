@@ -76,7 +76,10 @@ class _GenerateQuestionsScreenState
     final studyState = ref.watch(studyProvider);
     final filename =
         widget.material[DatabaseHelper.columnFilename] as String? ?? 'Material';
-    final isGenerating = studyState.isGenerating;
+    final materialId = widget.material[DatabaseHelper.columnId].toString();
+    final isGenerating =
+        studyState.isGenerating &&
+        studyState.generatingMaterialId == materialId;
 
     return Scaffold(
       backgroundColor: scheme.surface,

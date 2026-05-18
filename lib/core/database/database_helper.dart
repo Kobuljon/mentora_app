@@ -303,24 +303,55 @@ class DatabaseHelper {
 
   Future<void> deleteMaterial(String materialId) async {
     Database db = await instance.database;
-    await db.delete(
-      tableChunks,
-      where: '$columnMaterialId = ?',
-      whereArgs: [materialId],
-    );
-    await db.delete(
-      tableMaterials,
-      where: '$columnId = ?',
-      whereArgs: [materialId],
-    );
+    await db.transaction((txn) async {
+      final bundles = await txn.query(
+        tableQuestionBundles,
+        columns: [columnBundleId],
+        where: '$columnBundleMaterialId = ?',
+        whereArgs: [materialId],
+      );
+
+      for (final bundle in bundles) {
+        final bundleId = bundle[columnBundleId] as String?;
+        if (bundleId == null || bundleId.isEmpty) continue;
+        await txn.delete(
+          tableStudySessions,
+          where: '$columnSessionBundleId = ?',
+          whereArgs: [bundleId],
+        );
+      }
+
+      await txn.delete(
+        tableQuestionBundles,
+        where: '$columnBundleMaterialId = ?',
+        whereArgs: [materialId],
+      );
+      await txn.delete(
+        tableChunks,
+        where: '$columnMaterialId = ?',
+        whereArgs: [materialId],
+      );
+      await txn.delete(
+        tableMaterials,
+        where: '$columnId = ?',
+        whereArgs: [materialId],
+      );
+    });
   }
 
   Future<void> deleteQuestionBundle(String bundleId) async {
     Database db = await instance.database;
-    await db.delete(
-      tableQuestionBundles,
-      where: '$columnBundleId = ?',
-      whereArgs: [bundleId],
-    );
+    await db.transaction((txn) async {
+      await txn.delete(
+        tableStudySessions,
+        where: '$columnSessionBundleId = ?',
+        whereArgs: [bundleId],
+      );
+      await txn.delete(
+        tableQuestionBundles,
+        where: '$columnBundleId = ?',
+        whereArgs: [bundleId],
+      );
+    });
   }
 }

@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/database_helper.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../study/providers/study_provider.dart';
 
 /// Browse and manage the parsed content (excerpts) extracted from a material.
-class MaterialContentScreen extends StatefulWidget {
+class MaterialContentScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> material;
 
   const MaterialContentScreen({super.key, required this.material});
 
   @override
-  State<MaterialContentScreen> createState() => _MaterialContentScreenState();
+  ConsumerState<MaterialContentScreen> createState() =>
+      _MaterialContentScreenState();
 }
 
-class _MaterialContentScreenState extends State<MaterialContentScreen> {
+class _MaterialContentScreenState extends ConsumerState<MaterialContentScreen> {
   List<Map<String, dynamic>> _chunks = [];
   bool _isLoading = true;
 
@@ -44,8 +47,11 @@ class _MaterialContentScreenState extends State<MaterialContentScreen> {
 
   Future<void> _deleteMaterial() async {
     final materialId = widget.material[DatabaseHelper.columnId];
+    ref
+        .read(studyProvider.notifier)
+        .cancelGenerationForMaterial(materialId.toString());
     await DatabaseHelper.instance.deleteMaterial(materialId);
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.pop(context, true);
   }
 
   String get _filename =>
