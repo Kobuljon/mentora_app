@@ -463,7 +463,7 @@ class _ChatTitle extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             child: ClipOval(
               child: Image.asset(
-                'assets/icon/logo.png',
+                'assets/icon/logo.jpg',
                 width: 18,
                 height: 18,
                 fit: BoxFit.cover,

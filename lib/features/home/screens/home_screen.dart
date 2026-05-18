@@ -563,7 +563,7 @@ class _TutorBadge extends StatelessWidget {
       height: 94,
       child: Center(
         child: Image.asset(
-          'assets/icon/logo.png',
+          'assets/icon/logo.jpg',
           width: 80,
           height: 80,
           fit: BoxFit.contain,

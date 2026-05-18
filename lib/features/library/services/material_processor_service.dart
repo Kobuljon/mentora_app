@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:audio_decoder/audio_decoder.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path/path.dart' as p;
@@ -470,10 +472,35 @@ class MaterialProcessorService {
         );
       }
 
-      stream = recognizer.createStream();
-      stream.acceptWaveform(samples: wave.samples, sampleRate: wave.sampleRate);
-      recognizer.decode(stream);
-      final text = recognizer.getResult(stream).text.trim();
+      final chunkTexts = <String>[];
+      final chunkDurationSeconds = 20;
+      final samplesPerChunk = wave.sampleRate * chunkDurationSeconds;
+
+      for (
+        var start = 0;
+        start < wave.samples.length;
+        start += samplesPerChunk
+      ) {
+        final end = math.min(start + samplesPerChunk, wave.samples.length);
+        final chunkSamples = Float32List.sublistView(wave.samples, start, end);
+
+        stream = recognizer.createStream();
+        stream.acceptWaveform(
+          samples: chunkSamples,
+          sampleRate: wave.sampleRate,
+        );
+        recognizer.decode(stream);
+
+        final text = recognizer.getResult(stream).text.trim();
+        if (text.isNotEmpty) {
+          chunkTexts.add(text);
+        }
+
+        stream.free();
+        stream = null;
+      }
+
+      final text = chunkTexts.join(' ').trim();
       if (text.isEmpty) {
         throw const FormatException(
           'Sherpa ONNX returned an empty transcript.',

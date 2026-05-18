@@ -28,7 +28,7 @@ class MentoraLogo extends StatelessWidget {
               borderRadius: borderRadius ?? BorderRadius.circular(size * 0.24),
             ),
       child: Image.asset(
-        'assets/icon/logo.png',
+        'assets/icon/logo.jpg',
         width: innerSize,
         height: innerSize,
         fit: BoxFit.contain,
