@@ -453,10 +453,18 @@ class MaterialProcessorService {
     final backendName = preferences.getString(
       audioTranscriptionBackendPreferenceKey,
     );
-    for (final backend in AudioTranscriptionBackend.values) {
-      if (backend.name == backendName) return backend;
+    final modelStatus = await SherpaOnnxModelService.instance.getStatus();
+    if (modelStatus.isReady) {
+      return AudioTranscriptionBackend.sherpaOnnx;
     }
-    return AudioTranscriptionBackend.placeholder;
+
+    for (final backend in AudioTranscriptionBackend.values) {
+      if (backend.name == backendName &&
+          backend != AudioTranscriptionBackend.placeholder) {
+        return backend;
+      }
+    }
+    return AudioTranscriptionBackend.sherpaOnnx;
   }
 
   Future<String> _transcribeAudioWithSherpaOnnx(File file) async {

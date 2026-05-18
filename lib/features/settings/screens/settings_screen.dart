@@ -672,14 +672,14 @@ enum _AiModelAction { download, importFile, exportFile }
 
 enum _AudioModelAction { download, importFile, exportFile }
 
-class _SherpaModelTile extends StatefulWidget {
+class _SherpaModelTile extends ConsumerStatefulWidget {
   const _SherpaModelTile();
 
   @override
-  State<_SherpaModelTile> createState() => _SherpaModelTileState();
+  ConsumerState<_SherpaModelTile> createState() => _SherpaModelTileState();
 }
 
-class _SherpaModelTileState extends State<_SherpaModelTile> {
+class _SherpaModelTileState extends ConsumerState<_SherpaModelTile> {
   late Future<SherpaOnnxModelStatus> _statusFuture;
 
   static const _acceptedTypeGroups = <file_selector.XTypeGroup>[
@@ -815,7 +815,16 @@ class _SherpaModelTileState extends State<_SherpaModelTile> {
       setState(() {
         _statusFuture = Future.value(result.status);
       });
-      _showInfo(context, 'Downloaded ${result.importedFiles.join(', ')}.');
+      await _activateSherpaIfReady(result.status);
+      if (!context.mounted) {
+        return;
+      }
+      _showInfo(
+        context,
+        result.status.isReady
+            ? 'Sherpa is ready for audio transcription.'
+            : 'Downloaded ${result.importedFiles.join(', ')}.',
+      );
     } catch (error) {
       if (!context.mounted) {
         return;
@@ -847,6 +856,10 @@ class _SherpaModelTileState extends State<_SherpaModelTile> {
       setState(() {
         _statusFuture = Future.value(result.status);
       });
+      await _activateSherpaIfReady(result.status);
+      if (!context.mounted) {
+        return;
+      }
 
       final message = result.status.isReady
           ? 'Sherpa is ready. Imported ${result.importedFiles.join(', ')}.'
@@ -863,6 +876,15 @@ class _SherpaModelTileState extends State<_SherpaModelTile> {
       }
       _showInfo(context, 'Sherpa import failed: $error');
     }
+  }
+
+  Future<void> _activateSherpaIfReady(SherpaOnnxModelStatus status) async {
+    if (!status.isReady) {
+      return;
+    }
+    await ref
+        .read(settingsProvider.notifier)
+        .setAudioTranscriptionBackend(AudioTranscriptionBackend.sherpaOnnx);
   }
 
   Future<void> _exportFiles(BuildContext context) async {

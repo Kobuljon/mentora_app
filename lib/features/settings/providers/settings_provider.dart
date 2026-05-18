@@ -74,7 +74,7 @@ class AppSettings {
     this.azureOpenAiApiVersion = '2024-10-21',
     this.geminiApiKey = '',
     this.geminiModel = 'gemini-2.5-flash',
-    this.audioTranscriptionBackend = AudioTranscriptionBackend.placeholder,
+    this.audioTranscriptionBackend = AudioTranscriptionBackend.sherpaOnnx,
   });
 
   final ThemeMode themeMode;
@@ -320,7 +320,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         preferences,
         audioTranscriptionBackendPreferenceKey,
         AudioTranscriptionBackend.values,
-        AudioTranscriptionBackend.placeholder,
+        AudioTranscriptionBackend.sherpaOnnx,
       ),
     );
   }
