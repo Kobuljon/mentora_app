@@ -334,11 +334,12 @@ class MaterialProcessorService {
           100,
           35,
         );
+        final conversionTimeout = await _audioConversionTimeout(file);
         sherpaInputFile = await _prepareAudioForSherpa(file).timeout(
-          const Duration(seconds: 75),
+          conversionTimeout,
           onTimeout: () {
             throw TimeoutException(
-              'Audio conversion took too long. Try a shorter audio file or WAV format.',
+              'Audio conversion exceeded ${_formatDuration(conversionTimeout)}. Try WAV format or a shorter audio file.',
             );
           },
         );
@@ -365,17 +366,17 @@ class MaterialProcessorService {
             },
           );
         }
-        transcript = await _transcribeAudioWithSherpaOnnx(sherpaInputFile)
-            .timeout(
-              const Duration(minutes: 3),
-              onTimeout: () {
-                throw TimeoutException(
-                  'Audio transcription took too long. Try a shorter clip.',
-                );
-              },
+        final transcriptionTimeout = await _audioTranscriptionTimeout(file);
+        transcript = await _transcribeAudioWithSherpaOnnx(sherpaInputFile).timeout(
+          transcriptionTimeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'Audio transcription exceeded ${_formatDuration(transcriptionTimeout)}. Try a shorter clip.',
             );
+          },
+        );
       } catch (error) {
-        transcript = await _buildPlaceholderAudioTranscript(file, error);
+        throw Exception('Sherpa ONNX failed: $error');
       } finally {
         transcriptionProgressTimer?.cancel();
         if (sherpaInputFile != null && sherpaInputFile.path != file.path) {
@@ -446,6 +447,84 @@ class MaterialProcessorService {
     );
 
     return File(wavPath);
+  }
+
+  Future<Duration> _audioConversionTimeout(File file) async {
+    final duration = await _readAudioDuration(file);
+    if (duration != null) {
+      return _clampDuration(
+        _scaleDuration(duration, 2),
+        min: const Duration(minutes: 10),
+        max: const Duration(minutes: 45),
+      );
+    }
+
+    final sizeMegabytes = await _fileSizeMegabytes(file);
+    return _clampDuration(
+      Duration(minutes: sizeMegabytes.ceil() * 3),
+      min: const Duration(minutes: 10),
+      max: const Duration(minutes: 45),
+    );
+  }
+
+  Future<Duration> _audioTranscriptionTimeout(File file) async {
+    final duration = await _readAudioDuration(file);
+    if (duration != null) {
+      return _clampDuration(
+        _scaleDuration(duration, 6),
+        min: const Duration(minutes: 15),
+        max: const Duration(minutes: 90),
+      );
+    }
+
+    final sizeMegabytes = await _fileSizeMegabytes(file);
+    return _clampDuration(
+      Duration(minutes: sizeMegabytes.ceil() * 6),
+      min: const Duration(minutes: 15),
+      max: const Duration(minutes: 90),
+    );
+  }
+
+  Future<Duration?> _readAudioDuration(File file) async {
+    try {
+      final info = await AudioDecoder.getAudioInfo(
+        file.path,
+      ).timeout(const Duration(seconds: 8));
+      return info.duration > Duration.zero ? info.duration : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<double> _fileSizeMegabytes(File file) async {
+    try {
+      return await file.length() / (1024 * 1024);
+    } catch (_) {
+      return 1;
+    }
+  }
+
+  Duration _scaleDuration(Duration duration, int multiplier) {
+    return Duration(microseconds: duration.inMicroseconds * multiplier);
+  }
+
+  Duration _clampDuration(
+    Duration duration, {
+    required Duration min,
+    required Duration max,
+  }) {
+    if (duration < min) return min;
+    if (duration > max) return max;
+    return duration;
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds.remainder(60);
+    if (seconds == 0) {
+      return '$minutes minutes';
+    }
+    return '$minutes minutes $seconds seconds';
   }
 
   Future<AudioTranscriptionBackend> _getAudioBackend() async {
