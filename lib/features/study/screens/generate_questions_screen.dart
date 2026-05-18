@@ -137,24 +137,7 @@ class _GenerateQuestionsScreenState
                       ],
                     ),
                     const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: _SectionHeader(title: 'Number of questions'),
-                        ),
-                        SizedBox(
-                          width: 110,
-                          child: _NumberField(
-                            controller: _countCtrl,
-                            label: 'Custom',
-                            helperText: null,
-                            enabled: !isGenerating,
-                            validator: _validateQuestionCount,
-                            onChanged: (_) => setState(() {}),
-                          ),
-                        ),
-                      ],
-                    ),
+                    const _SectionHeader(title: 'Number of questions'),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
@@ -170,6 +153,12 @@ class _GenerateQuestionsScreenState
                                     () => _countCtrl.text = n.toString(),
                                   ),
                           ),
+                        _InlineCustomCountField(
+                          controller: _countCtrl,
+                          enabled: !isGenerating,
+                          validator: _validateQuestionCount,
+                          onChanged: (_) => setState(() {}),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 22),
@@ -490,33 +479,56 @@ class _CountChip extends StatelessWidget {
   }
 }
 
-class _NumberField extends StatelessWidget {
-  const _NumberField({
+class _InlineCustomCountField extends StatelessWidget {
+  const _InlineCustomCountField({
     required this.controller,
-    required this.label,
-    required this.helperText,
     required this.enabled,
     required this.validator,
     this.onChanged,
   });
 
   final TextEditingController controller;
-  final String label;
-  final String? helperText;
   final bool enabled;
   final String? Function(String?) validator;
   final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      enabled: enabled,
-      decoration: InputDecoration(labelText: label, helperText: helperText),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      validator: validator,
-      onChanged: onChanged,
+    final scheme = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      width: 124,
+      child: TextFormField(
+        controller: controller,
+        enabled: enabled,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        validator: validator,
+        onChanged: onChanged,
+        textAlign: TextAlign.center,
+        decoration: InputDecoration(
+          labelText: 'Custom',
+          isDense: true,
+          filled: true,
+          fillColor: scheme.surfaceContainer,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: scheme.outlineVariant),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: scheme.outlineVariant),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: scheme.primary, width: 1.4),
+          ),
+        ),
+      ),
     );
   }
 }
