@@ -155,7 +155,7 @@ class AiChatService {
         : '\nThe student also attached an image. Use the image together with these snippets if both are relevant.';
 
     return '''
-Use Mentora's uploaded learning material snippets as the main source when they are relevant.
+Use Mentora's uploaded learning material snippets as the main source when they are relevant, especially when the student asks about uploaded materials, notes, lessons, files, review, flashcards, or quizzes.
 If the snippets do not contain the answer, say that you could not find it in the uploaded materials, then give a brief general answer if it helps.
 Cite sources inline using the provided source labels, for example [filename, page 2].$imageInstruction
 

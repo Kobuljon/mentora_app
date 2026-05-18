@@ -30,7 +30,7 @@ class TrainingDataSearchService {
     : _database = database ?? DatabaseHelper.instance;
 
   static final _wordPattern = RegExp(r"[a-zA-Z0-9']+");
-  static const _minimumScore = 2.4;
+  static const _minimumScore = 1.3;
   static const _maxSnippetChars = 900;
   static const _stopWords = {
     'about',
@@ -53,6 +53,7 @@ class TrainingDataSearchService {
     'notes',
     'please',
     'question',
+    'questions',
     'should',
     'show',
     'tell',
@@ -80,9 +81,14 @@ class TrainingDataSearchService {
 
   Future<List<TrainingDataMatch>> search(String query, {int limit = 5}) async {
     final queryTokens = _tokenize(query);
-    if (queryTokens.isEmpty) return const [];
-
     final rows = await _database.getSearchableTrainingChunks();
+    if (rows.isEmpty) return const [];
+    if (queryTokens.isEmpty) {
+      return _wantsUploadedMaterialContext(query)
+          ? _recentMatches(rows, limit: limit)
+          : const [];
+    }
+
     final matches = <TrainingDataMatch>[];
 
     for (final row in rows) {
@@ -107,7 +113,37 @@ class TrainingDataSearchService {
     }
 
     matches.sort((a, b) => b.score.compareTo(a.score));
-    return matches.take(limit).toList(growable: false);
+    final ranked = matches.take(limit).toList(growable: false);
+    if (ranked.isNotEmpty) return ranked;
+
+    return _wantsUploadedMaterialContext(query)
+        ? _recentMatches(rows, limit: limit)
+        : const [];
+  }
+
+  List<TrainingDataMatch> _recentMatches(
+    List<Map<String, dynamic>> rows, {
+    required int limit,
+  }) {
+    final matches = <TrainingDataMatch>[];
+    for (final row in rows) {
+      final content = (row[DatabaseHelper.columnContent] as String? ?? '')
+          .trim();
+      if (content.isEmpty) continue;
+      matches.add(
+        TrainingDataMatch(
+          filename:
+              row[DatabaseHelper.columnFilename] as String? ?? 'Uploaded note',
+          content: _firstWindow(content),
+          sourceType: row[DatabaseHelper.columnSourceType] as String? ?? 'text',
+          chunkIndex: row[DatabaseHelper.columnChunkIndex] as int? ?? 0,
+          pageNumber: row[DatabaseHelper.columnPageNumber] as int? ?? 1,
+          score: 0.1,
+        ),
+      );
+      if (matches.length == limit) break;
+    }
+    return matches;
   }
 
   double _score(Set<String> queryTokens, String content) {
@@ -155,6 +191,19 @@ class TrainingDataSearchService {
         .map((match) => match.group(0)!)
         .where((token) => token.length > 2 && !_stopWords.contains(token))
         .toSet();
+  }
+
+  bool _wantsUploadedMaterialContext(String query) {
+    final q = query.toLowerCase();
+    return RegExp(
+      r'\b(uploaded|upload|material|materials|notes|lessons|files|documents|pdf|audio|transcript|quiz me|flashcards|review)\b',
+    ).hasMatch(q);
+  }
+
+  String _firstWindow(String content) {
+    final compact = content.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.length <= _maxSnippetChars) return compact;
+    return '${compact.substring(0, _maxSnippetChars).trim()} ...';
   }
 
   String _relevantWindow(String content, Set<String> queryTokens) {
