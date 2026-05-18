@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_selector/file_selector.dart' as file_selector;
 
 import '../../../core/services/android_file_share_service.dart';
+import '../../../core/services/sherpa_onnx_model_service.dart';
 import '../../models/screens/downloaded_models_screen.dart';
 import '../../onboarding/services/model_download_service.dart';
 import '../providers/settings_provider.dart';
@@ -27,53 +28,12 @@ class SettingsScreen extends ConsumerWidget {
               _SettingsTile(
                 icon: Icons.memory_rounded,
                 title: 'AI Model',
-                subtitle: 'Manage E2B, E4B, and multimodal local engines',
-                trailing: const _TrailingText('Local'),
-                onTap: () => Navigator.of(context, rootNavigator: true).push(
-                  MaterialPageRoute(
-                    builder: (_) => const DownloadedModelsScreen(),
-                  ),
-                ),
+                subtitle: 'Download, import, or export local Gemma engines',
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => _showAiModelActions(context),
               ),
               const Divider(height: 1),
-              _SettingsTile(
-                icon: Icons.graphic_eq_rounded,
-                title: 'Audio transcription',
-                subtitle:
-                    settings.audioTranscriptionBackend ==
-                        AudioTranscriptionBackend.sherpaOnnx
-                    ? 'Offline Sherpa ONNX (WAV-first setup)'
-                    : 'Built-in placeholder transcript engine',
-                trailing: _ChoiceChipMenu<AudioTranscriptionBackend>(
-                  value: settings.audioTranscriptionBackend,
-                  values: AudioTranscriptionBackend.values,
-                  labelFor: (value) => value.label,
-                  onSelected: notifier.setAudioTranscriptionBackend,
-                ),
-              ),
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.file_upload_outlined),
-                        label: const Text('Import'),
-                        onPressed: () => _importModel(context),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.file_download_outlined),
-                        label: const Text('Export'),
-                        onPressed: () => _exportModel(context),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              const _SherpaModelTile(),
             ],
           ),
           _SettingsSection(
@@ -134,19 +94,13 @@ class SettingsScreen extends ConsumerWidget {
             title: 'For language learners',
             children: [
               _SettingsSwitchTile(
-                icon: Icons.spellcheck_rounded,
-                title: 'Grammar',
-                subtitle: 'Include grammar notes in answers and feedback',
-                value: settings.grammarAssistEnabled,
-                onChanged: notifier.setGrammarAssistEnabled,
-              ),
-              const Divider(height: 1),
-              _SettingsSwitchTile(
-                icon: Icons.record_voice_over_rounded,
-                title: 'Pronunciation',
-                subtitle: 'Show pronunciation help when it is useful',
-                value: settings.pronunciationAssistEnabled,
-                onChanged: notifier.setPronunciationAssistEnabled,
+                icon: Icons.school_rounded,
+                title: 'Language learner',
+                subtitle: settings.languageLearnerModeEnabled
+                    ? 'Quizzes emphasize vocabulary, grammar, and pronunciation'
+                    : 'Quizzes focus on regular reading comprehension',
+                value: settings.languageLearnerModeEnabled,
+                onChanged: notifier.setLanguageLearnerModeEnabled,
               ),
             ],
           ),
@@ -193,77 +147,67 @@ class SettingsScreen extends ConsumerWidget {
                   enabled ? ThemeMode.dark : ThemeMode.light,
                 ),
               ),
-              const Divider(height: 1),
-              _SettingsTile(
-                icon: Icons.language_rounded,
-                title: 'Language',
-                subtitle: 'App interface language',
-                trailing: DropdownButtonHideUnderline(
-                  child: DropdownButton<MentoraLanguage>(
-                    value: settings.language,
-                    alignment: AlignmentDirectional.centerEnd,
-                    items: [
-                      for (final language in MentoraLanguage.values)
-                        DropdownMenuItem(
-                          value: language,
-                          child: Text(language.label),
-                        ),
-                    ],
-                    onChanged: (language) {
-                      if (language != null) notifier.setLanguage(language);
-                    },
-                  ),
-                ),
-              ),
-              const Divider(height: 1),
-              _SettingsSwitchTile(
-                icon: Icons.wifi_off_rounded,
-                title: 'Offline mode',
-                subtitle: 'Prefer local files and downloaded AI models',
-                value: settings.offlineModeEnabled,
-                onChanged: notifier.setOfflineModeEnabled,
-              ),
-            ],
-          ),
-          _SettingsSection(
-            title: 'Study',
-            children: [
-              _SettingsTile(
-                icon: Icons.menu_book_outlined,
-                title: 'Default view',
-                subtitle: 'Reader tab opened for study material',
-                trailing: _ChoiceChipMenu<DefaultStudyView>(
-                  value: settings.defaultStudyView,
-                  values: DefaultStudyView.values,
-                  labelFor: (value) => value.label,
-                  onSelected: notifier.setDefaultStudyView,
-                ),
-              ),
-              const Divider(height: 1),
-              _SettingsTile(
-                icon: Icons.format_size_rounded,
-                title: 'Text size',
-                subtitle: 'Reader text scale',
-                trailing: _ChoiceChipMenu<ReaderTextSize>(
-                  value: settings.readerTextSize,
-                  values: ReaderTextSize.values,
-                  labelFor: (value) => value.label,
-                  onSelected: notifier.setReaderTextSize,
-                ),
-              ),
-              const Divider(height: 1),
-              _SettingsSwitchTile(
-                icon: Icons.note_alt_outlined,
-                title: 'Auto save notes',
-                subtitle: 'Keep notes saved locally while studying',
-                value: settings.autoSaveNotesEnabled,
-                onChanged: notifier.setAutoSaveNotesEnabled,
-              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _showAiModelActions(BuildContext context) async {
+    final action = await showDialog<_AiModelAction>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('AI Model'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _AiModelAction.download),
+            child: const _ActionOption(
+              icon: Icons.cloud_download_outlined,
+              title: 'Download AI model',
+              subtitle: 'Open the local Gemma model manager',
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _AiModelAction.importFile),
+            child: const _ActionOption(
+              icon: Icons.file_upload_outlined,
+              title: 'Import',
+              subtitle: 'Load a .litertlm model file',
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _AiModelAction.exportFile),
+            child: const _ActionOption(
+              icon: Icons.file_download_outlined,
+              title: 'Export',
+              subtitle: 'Share or copy a downloaded .litertlm model',
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (action == null || !context.mounted) {
+      return;
+    }
+
+    switch (action) {
+      case _AiModelAction.download:
+        Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute(builder: (_) => const DownloadedModelsScreen()),
+        );
+        return;
+      case _AiModelAction.importFile:
+        await _importModel(context);
+        return;
+      case _AiModelAction.exportFile:
+        await _exportModel(context);
+        return;
+    }
   }
 
   String _secretStatus(String value) {
@@ -724,6 +668,285 @@ class SettingsScreen extends ConsumerWidget {
 
 enum _ExportAction { share, copyToFolder }
 
+enum _AiModelAction { download, importFile, exportFile }
+
+enum _AudioModelAction { download, importFile, exportFile }
+
+class _SherpaModelTile extends StatefulWidget {
+  const _SherpaModelTile();
+
+  @override
+  State<_SherpaModelTile> createState() => _SherpaModelTileState();
+}
+
+class _SherpaModelTileState extends State<_SherpaModelTile> {
+  late Future<SherpaOnnxModelStatus> _statusFuture;
+
+  static const _acceptedTypeGroups = <file_selector.XTypeGroup>[
+    file_selector.XTypeGroup(
+      label: 'Sherpa model files',
+      extensions: <String>['onnx', 'txt'],
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _statusFuture = SherpaOnnxModelService.instance.getStatus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<SherpaOnnxModelStatus>(
+      future: _statusFuture,
+      builder: (context, snapshot) {
+        final status = snapshot.data;
+        final subtitle = switch (snapshot.connectionState) {
+          ConnectionState.waiting => 'Checking Sherpa ONNX model files...',
+          _ when snapshot.hasError => 'Could not check Sherpa model files',
+          _ when status == null =>
+            'Sherpa ONNX needs encoder, decoder, and tokens files',
+          _ when status.isReady =>
+            'Whisper tiny is ready for offline transcription in ${status.rootPath}',
+          _ => 'Missing: ${status.missingFiles.join(', ')}',
+        };
+
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SettingsTile(
+                icon: Icons.folder_zip_outlined,
+                title: 'Audio model',
+                subtitle: subtitle,
+                trailing: _TrailingText(
+                  status?.summary ?? (snapshot.hasError ? 'Error' : 'Checking'),
+                ),
+                onTap: snapshot.connectionState == ConnectionState.waiting
+                    ? null
+                    : () => _showAudioModelActions(context, status),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showAudioModelActions(
+    BuildContext context,
+    SherpaOnnxModelStatus? status,
+  ) async {
+    final action = await showDialog<_AudioModelAction>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Audio model'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _AudioModelAction.download),
+            child: const _ActionOption(
+              icon: Icons.cloud_download_outlined,
+              title: 'Download tiny.en',
+              subtitle: 'Download the built-in Sherpa Whisper English model',
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _AudioModelAction.importFile),
+            child: const _ActionOption(
+              icon: Icons.file_upload_outlined,
+              title: 'Import',
+              subtitle: 'Import Sherpa encoder, decoder, and tokens files',
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: status == null || status.installedCount == 0
+                ? null
+                : () => Navigator.pop(
+                    dialogContext,
+                    _AudioModelAction.exportFile,
+                  ),
+            child: _ActionOption(
+              icon: Icons.file_download_outlined,
+              title: 'Export',
+              subtitle: status == null || status.installedCount == 0
+                  ? 'No downloaded Sherpa files yet'
+                  : 'Copy Sherpa model files to another folder',
+              enabled: status != null && status.installedCount > 0,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (action == null || !context.mounted) {
+      return;
+    }
+
+    switch (action) {
+      case _AudioModelAction.download:
+        await _downloadTinyEnglishModel(context);
+        return;
+      case _AudioModelAction.importFile:
+        await _importFiles(context);
+        return;
+      case _AudioModelAction.exportFile:
+        await _exportFiles(context);
+        return;
+    }
+  }
+
+  Future<void> _downloadTinyEnglishModel(BuildContext context) async {
+    final progress = ValueNotifier<double?>(0);
+    _showProgressDialog(context, progress);
+
+    try {
+      final result = await SherpaOnnxModelService.instance
+          .downloadTinyEnglishModel(
+            onProgress: (value) => progress.value = value,
+          );
+      if (!context.mounted) {
+        return;
+      }
+
+      Navigator.of(context, rootNavigator: true).pop();
+      setState(() {
+        _statusFuture = Future.value(result.status);
+      });
+      _showInfo(context, 'Downloaded ${result.importedFiles.join(', ')}.');
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      Navigator.of(context, rootNavigator: true).pop();
+      _showInfo(context, 'Sherpa download failed: $error');
+    } finally {
+      progress.dispose();
+    }
+  }
+
+  Future<void> _importFiles(BuildContext context) async {
+    final selectedFiles = await file_selector.openFiles(
+      acceptedTypeGroups: _acceptedTypeGroups,
+      confirmButtonText: 'Import files',
+    );
+    if (selectedFiles.isEmpty || !context.mounted) {
+      return;
+    }
+
+    try {
+      final result = await SherpaOnnxModelService.instance.importFiles(
+        selectedFiles,
+      );
+      if (!context.mounted) {
+        return;
+      }
+
+      setState(() {
+        _statusFuture = Future.value(result.status);
+      });
+
+      final message = result.status.isReady
+          ? 'Sherpa is ready. Imported ${result.importedFiles.join(', ')}.'
+          : 'Imported ${result.importedFiles.join(', ')}. Still missing ${result.status.missingFiles.join(', ')}.';
+      _showInfo(context, message);
+    } on FormatException catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      _showInfo(context, error.message);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      _showInfo(context, 'Sherpa import failed: $error');
+    }
+  }
+
+  Future<void> _exportFiles(BuildContext context) async {
+    final directoryPath = await file_selector.getDirectoryPath(
+      confirmButtonText: 'Export here',
+    );
+    if (directoryPath == null || !context.mounted) {
+      return;
+    }
+
+    try {
+      final exportedFiles = await SherpaOnnxModelService.instance
+          .exportFilesToDirectory(directoryPath);
+      if (!context.mounted) {
+        return;
+      }
+      if (exportedFiles.isEmpty) {
+        _showInfo(context, 'No Sherpa files are available to export.');
+        return;
+      }
+      _showInfo(
+        context,
+        'Exported ${exportedFiles.join(', ')} to $directoryPath',
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      _showInfo(context, 'Sherpa export failed: $error');
+    }
+  }
+
+  void _showProgressDialog(
+    BuildContext context,
+    ValueNotifier<double?> progress,
+  ) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: ValueListenableBuilder<double?>(
+            valueListenable: progress,
+            builder: (context, value, _) {
+              final progressValue = value?.clamp(0.0, 1.0);
+              return SizedBox(
+                width: 320,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Downloading Sherpa tiny.en...',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    LinearProgressIndicator(value: progressValue),
+                    const SizedBox(height: 8),
+                    Text(
+                      progressValue == null
+                          ? 'Preparing download...'
+                          : '${(progressValue * 100).round()}%',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showInfo(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+  }
+}
+
 class _ProviderConfigFields extends StatelessWidget {
   const _ProviderConfigFields({required this.children});
 
@@ -809,6 +1032,55 @@ class _ExportActionOption extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ActionOption extends StatelessWidget {
+  const _ActionOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final foreground = enabled
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant;
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Row(
+        children: [
+          Icon(icon, color: foreground),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: theme.textTheme.bodyLarge),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

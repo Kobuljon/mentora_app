@@ -60,8 +60,7 @@ class AppSettings {
   const AppSettings({
     this.themeMode = ThemeMode.system,
     this.language = MentoraLanguage.english,
-    this.grammarAssistEnabled = true,
-    this.pronunciationAssistEnabled = true,
+    this.languageLearnerModeEnabled = true,
     this.offlineModeEnabled = true,
     this.autoSaveNotesEnabled = true,
     this.defaultStudyView = DefaultStudyView.read,
@@ -80,8 +79,7 @@ class AppSettings {
 
   final ThemeMode themeMode;
   final MentoraLanguage language;
-  final bool grammarAssistEnabled;
-  final bool pronunciationAssistEnabled;
+  final bool languageLearnerModeEnabled;
   final bool offlineModeEnabled;
   final bool autoSaveNotesEnabled;
   final DefaultStudyView defaultStudyView;
@@ -134,8 +132,7 @@ class AppSettings {
   AppSettings copyWith({
     ThemeMode? themeMode,
     MentoraLanguage? language,
-    bool? grammarAssistEnabled,
-    bool? pronunciationAssistEnabled,
+    bool? languageLearnerModeEnabled,
     bool? offlineModeEnabled,
     bool? autoSaveNotesEnabled,
     DefaultStudyView? defaultStudyView,
@@ -154,9 +151,8 @@ class AppSettings {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
       language: language ?? this.language,
-      grammarAssistEnabled: grammarAssistEnabled ?? this.grammarAssistEnabled,
-      pronunciationAssistEnabled:
-          pronunciationAssistEnabled ?? this.pronunciationAssistEnabled,
+      languageLearnerModeEnabled:
+          languageLearnerModeEnabled ?? this.languageLearnerModeEnabled,
       offlineModeEnabled: offlineModeEnabled ?? this.offlineModeEnabled,
       autoSaveNotesEnabled: autoSaveNotesEnabled ?? this.autoSaveNotesEnabled,
       defaultStudyView: defaultStudyView ?? this.defaultStudyView,
@@ -185,6 +181,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   static const _themeModeKey = 'settings.themeMode';
   static const _languageKey = 'settings.language';
+  static const _languageLearnerModeKey = 'settings.languageLearnerModeEnabled';
   static const _grammarAssistKey = 'settings.grammarAssistEnabled';
   static const _pronunciationAssistKey = 'settings.pronunciationAssistEnabled';
   static const _offlineModeKey = 'settings.offlineModeEnabled';
@@ -209,12 +206,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _update(state.copyWith(language: language));
   }
 
-  Future<void> setGrammarAssistEnabled(bool enabled) async {
-    await _update(state.copyWith(grammarAssistEnabled: enabled));
-  }
-
-  Future<void> setPronunciationAssistEnabled(bool enabled) async {
-    await _update(state.copyWith(pronunciationAssistEnabled: enabled));
+  Future<void> setLanguageLearnerModeEnabled(bool enabled) async {
+    await _update(state.copyWith(languageLearnerModeEnabled: enabled));
   }
 
   Future<void> setOfflineModeEnabled(bool enabled) async {
@@ -288,9 +281,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         MentoraLanguage.values,
         MentoraLanguage.english,
       ),
-      grammarAssistEnabled: preferences.getBool(_grammarAssistKey) ?? true,
-      pronunciationAssistEnabled:
-          preferences.getBool(_pronunciationAssistKey) ?? true,
+      languageLearnerModeEnabled:
+          preferences.getBool(_languageLearnerModeKey) ??
+          preferences.getBool(_grammarAssistKey) ??
+          preferences.getBool(_pronunciationAssistKey) ??
+          true,
       offlineModeEnabled: preferences.getBool(_offlineModeKey) ?? true,
       autoSaveNotesEnabled: preferences.getBool(_autoSaveNotesKey) ?? true,
       defaultStudyView: _readEnum(
@@ -336,10 +331,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await Future.wait([
       preferences.setString(_themeModeKey, next.themeMode.name),
       preferences.setString(_languageKey, next.language.name),
-      preferences.setBool(_grammarAssistKey, next.grammarAssistEnabled),
       preferences.setBool(
-        _pronunciationAssistKey,
-        next.pronunciationAssistEnabled,
+        _languageLearnerModeKey,
+        next.languageLearnerModeEnabled,
       ),
       preferences.setBool(_offlineModeKey, next.offlineModeEnabled),
       preferences.setBool(_autoSaveNotesKey, next.autoSaveNotesEnabled),

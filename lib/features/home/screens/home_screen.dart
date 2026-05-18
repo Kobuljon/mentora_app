@@ -21,6 +21,56 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Future<List<Map<String, dynamic>>>? _recentBundlesFuture;
 
+  bool _hasRecentQuizzes(List<Map<String, dynamic>> bundles) {
+    for (final b in bundles) {
+      try {
+        final qs = jsonDecode(b['questions']?.toString() ?? '[]');
+        if (qs is List && qs.isNotEmpty) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  Widget _buildRecentQuizzesBlock(ThemeData theme, ColorScheme scheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Recent Quizzes',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _openQuizPicker(context),
+              icon: const Icon(Icons.add_rounded, size: 20),
+              label: const Text(
+                'New quiz',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _RecentQuizzesSection(
+          future: _recentBundlesFuture,
+          onChanged: _refreshRecent,
+          onBrowseLibrary: () {
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const LibraryScreen()))
+                .then((_) => _refreshRecent());
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -181,8 +231,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final actions = <_HomeAction>[
       _HomeAction(
-        title: 'Upload &\nAnalyze PDF',
-        subtitle: 'Local, private,\nand smart.',
+        title: 'Import\nMaterial',
+        subtitle: 'PDF, image,\nor audio.',
         icon: Icons.note_add_outlined,
         cardColor: AppTheme.primary,
         foregroundColor: AppTheme.textLight,
@@ -198,8 +248,8 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       ),
       _HomeAction(
-        title: 'Start a\nQuiz',
-        subtitle: 'Pick a source,\nbegin in one tap.',
+        title: 'Make a\nQuiz',
+        subtitle: 'Practice from\na saved source.',
         icon: Icons.quiz_outlined,
         cardColor: AppTheme.secondary,
         foregroundColor: AppTheme.textLight,
@@ -207,8 +257,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: () => _openQuizPicker(context),
       ),
       _HomeAction(
-        title: 'Ask your\nTutor',
-        subtitle: 'Direct chat\ninterface.',
+        title: 'Ask\nMentora',
+        subtitle: 'Explain notes\nand tough parts.',
         icon: Icons.chat_bubble_outline_rounded,
         cardColor: AppTheme.accent,
         // Lime card needs dark text for contrast.
@@ -244,81 +294,32 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const _HeroCard(),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Recent Quizzes',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          color: scheme.onSurface,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.4,
-                        ),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => _openQuizPicker(context),
-                      icon: const Icon(Icons.add_rounded, size: 20),
-                      label: const Text(
-                        'New quiz',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _RecentQuizzesSection(
+                const SizedBox(height: 18),
+                FutureBuilder<List<Map<String, dynamic>>>(
                   future: _recentBundlesFuture,
-                  onChanged: _refreshRecent,
-                  onBrowseLibrary: () {
-                    Navigator.of(context)
-                        .push(
-                          MaterialPageRoute(
-                            builder: (_) => const LibraryScreen(),
-                          ),
-                        )
-                        .then((_) => _refreshRecent());
-                  },
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => _showSampleGuide(context),
-                      icon: const Icon(Icons.help_outline_rounded, size: 18),
-                      label: const Text(
-                        'Guide',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                // Compact single-row quick-action chips
-                Row(
-                  children: actions
-                      .map(
-                        (a) => Expanded(
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              right: a == actions.last ? 0 : 10,
-                            ),
-                            child: _QuickActionChip(action: a),
-                          ),
+                  builder: (context, snapshot) {
+                    final hasRecent =
+                        snapshot.connectionState == ConnectionState.waiting ||
+                        _hasRecentQuizzes(snapshot.data ?? const []);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (hasRecent) ...[
+                          _buildRecentQuizzesBlock(theme, scheme),
+                          const SizedBox(height: 22),
+                        ],
+                        _ActionSection(
+                          actions: actions,
+                          onGuide: () => _showSampleGuide(context),
                         ),
-                      )
-                      .toList(),
-                ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Icon(
-                    Icons.auto_awesome_rounded,
-                    size: 44,
-                    color: scheme.primary.withValues(alpha: 0.85),
-                  ),
+                        if (!hasRecent) ...[
+                          const SizedBox(height: 22),
+                          _buildRecentQuizzesBlock(theme, scheme),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -387,7 +388,7 @@ class _HeroCard extends StatelessWidget {
     final scheme = theme.colorScheme;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(22, 22, 20, 22),
+      padding: const EdgeInsets.fromLTRB(22, 22, 20, 20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -403,36 +404,151 @@ class _HeroCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome to your\nAI Tutor!',
-                  style: theme.textTheme.headlineMedium?.copyWith(
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Mentora',
+                  style: theme.textTheme.headlineLarge?.copyWith(
                     color: scheme.onPrimary,
                     fontWeight: FontWeight.w900,
-                    height: 1.05,
+                    height: 1,
                     letterSpacing: -0.7,
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Your local agent is ready to help.',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: scheme.onPrimary.withValues(alpha: 0.85),
-                    height: 1.25,
-                  ),
-                ),
-              ],
+              ),
+              const SizedBox(width: 12),
+              const _TutorBadge(),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Your offline AI tutor, trained on your materials.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: scheme.onPrimary.withValues(alpha: 0.86),
+              height: 1.25,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(width: 10),
-          const _TutorBadge(),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              _HeroSignal(
+                icon: Icons.phonelink_lock_rounded,
+                label: 'On-device',
+              ),
+              _HeroSignal(icon: Icons.wifi_off_rounded, label: 'Offline'),
+              _HeroSignal(icon: Icons.folder_copy_outlined, label: 'Grounded'),
+            ],
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _HeroSignal extends StatelessWidget {
+  const _HeroSignal({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: Colors.white),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionSection extends StatelessWidget {
+  const _ActionSection({required this.actions, required this.onGuide});
+
+  final List<_HomeAction> actions;
+  final VoidCallback onGuide;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Next steps',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                ),
+              ),
+            ),
+            IconButton.filledTonal(
+              onPressed: onGuide,
+              tooltip: 'Guide',
+              icon: const Icon(Icons.help_outline_rounded, size: 20),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final useGrid = constraints.maxWidth >= 560;
+            if (useGrid) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final action in actions) ...[
+                    Expanded(child: _QuickActionCard(action: action)),
+                    if (action != actions.last) const SizedBox(width: 12),
+                  ],
+                ],
+              );
+            }
+
+            return Column(
+              children: [
+                for (final action in actions) ...[
+                  _QuickActionCard(action: action),
+                  if (action != actions.last) const SizedBox(height: 10),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -457,8 +573,8 @@ class _TutorBadge extends StatelessWidget {
   }
 }
 
-class _QuickActionChip extends StatelessWidget {
-  const _QuickActionChip({required this.action});
+class _QuickActionCard extends StatelessWidget {
+  const _QuickActionCard({required this.action});
 
   final _HomeAction action;
 
@@ -472,32 +588,51 @@ class _QuickActionChip extends StatelessWidget {
         onTap: action.onTap,
         borderRadius: BorderRadius.circular(18),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          padding: const EdgeInsets.all(14),
+          child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: action.iconBackground,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(action.icon, color: fg, size: 22),
+                child: Icon(action.icon, color: fg, size: 24),
               ),
-              const SizedBox(height: 8),
-              Text(
-                // single-line label (strip the newline)
-                action.title.replaceAll('\n', ' '),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  height: 1.15,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      action.title.replaceAll('\n', ' '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: fg,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        height: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      action.subtitle.replaceAll('\n', ' '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: fg.withValues(alpha: 0.78),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(width: 8),
+              Icon(Icons.arrow_forward_rounded, color: fg, size: 20),
             ],
           ),
         ),

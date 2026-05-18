@@ -1,11 +1,12 @@
 import 'dart:io';
+import 'package:audio_decoder/audio_decoder.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path/path.dart' as p;
 import 'package:archive/archive_io.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
+import '../../../core/services/sherpa_onnx_model_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
@@ -315,9 +316,21 @@ class MaterialProcessorService {
 
     final backend = await _getAudioBackend();
     String transcript;
+    File? sherpaInputFile;
 
     if (backend == AudioTranscriptionBackend.sherpaOnnx) {
       try {
+        if (onProgress != null) {
+          onProgress('Preparing audio for Sherpa ONNX...', 0.35);
+        }
+        await _showNotification(
+          'Processing $title',
+          'Preparing audio for Sherpa ONNX...',
+          100,
+          35,
+        );
+        sherpaInputFile = await _prepareAudioForSherpa(file);
+
         if (onProgress != null) {
           onProgress('Transcribing with Sherpa ONNX...', 0.6);
         }
@@ -327,9 +340,16 @@ class MaterialProcessorService {
           100,
           60,
         );
-        transcript = await _transcribeAudioWithSherpaOnnx(file);
+        transcript = await _transcribeAudioWithSherpaOnnx(sherpaInputFile);
       } catch (error) {
         transcript = await _buildPlaceholderAudioTranscript(file, error);
+      } finally {
+        if (sherpaInputFile != null && sherpaInputFile.path != file.path) {
+          final tempFile = sherpaInputFile;
+          if (tempFile.existsSync()) {
+            await tempFile.delete();
+          }
+        }
       }
     } else {
       transcript = await _buildPlaceholderAudioTranscript(file, null);
@@ -358,48 +378,71 @@ class MaterialProcessorService {
     await _showNotification('Import Complete', '$title is ready.', 1, 1);
   }
 
-  Future<AudioTranscriptionBackend> _getAudioBackend() async {
-    final preferences = await SharedPreferences.getInstance();
-    final value = preferences.getString(audioTranscriptionBackendPreferenceKey);
-    if (value == AudioTranscriptionBackend.sherpaOnnx.name) {
-      return AudioTranscriptionBackend.sherpaOnnx;
-    }
-    return AudioTranscriptionBackend.placeholder;
-  }
-
-  Future<String> _transcribeAudioWithSherpaOnnx(File file) async {
+  Future<File> _prepareAudioForSherpa(File file) async {
     final extension = p.extension(file.path).toLowerCase();
-    if (extension != '.wav') {
+    if (extension == '.wav' || extension == '.wave') {
+      return file;
+    }
+
+    if (!AudioDecoder.needsConversion(file.path)) {
       throw UnsupportedError(
-        'Sherpa ONNX currently supports WAV imports in this app. Please convert the file to .wav first.',
+        'Sherpa ONNX needs a WAV file, and ${p.basename(file.path)} is not in a supported conversion format.',
       );
     }
 
+    final tempDir = await getTemporaryDirectory();
+    final outputDirectory = Directory(
+      p.join(tempDir.path, 'mentora_sherpa_audio'),
+    );
+    if (!outputDirectory.existsSync()) {
+      await outputDirectory.create(recursive: true);
+    }
+
+    final wavPath = p.join(
+      outputDirectory.path,
+      '${p.basenameWithoutExtension(file.path)}_${DateTime.now().millisecondsSinceEpoch}.wav',
+    );
+
+    await AudioDecoder.convertToWav(
+      file.path,
+      wavPath,
+      sampleRate: 16000,
+      channels: 1,
+      bitDepth: 16,
+    );
+
+    return File(wavPath);
+  }
+
+  Future<AudioTranscriptionBackend> _getAudioBackend() async {
+    return AudioTranscriptionBackend.sherpaOnnx;
+  }
+
+  Future<String> _transcribeAudioWithSherpaOnnx(File file) async {
     if (!_sherpaBindingsReady) {
       sherpa.initBindings();
       _sherpaBindingsReady = true;
     }
 
-    final supportDir = await getApplicationSupportDirectory();
-    final modelRoot = p.join(
-      supportDir.path,
-      'models',
-      'sherpa_onnx',
-      'whisper_tiny',
-    );
-    final encoderPath = p.join(modelRoot, 'encoder.int8.onnx');
-    final decoderPath = p.join(modelRoot, 'decoder.int8.onnx');
-    final tokensPath = p.join(modelRoot, 'tokens.txt');
-
-    final missing = <String>[];
-    if (!File(encoderPath).existsSync()) missing.add('encoder.int8.onnx');
-    if (!File(decoderPath).existsSync()) missing.add('decoder.int8.onnx');
-    if (!File(tokensPath).existsSync()) missing.add('tokens.txt');
-    if (missing.isNotEmpty) {
+    final modelStatus = await SherpaOnnxModelService.instance.getStatus();
+    if (!modelStatus.isReady) {
       throw FileSystemException(
-        'Missing Sherpa ONNX model files: ${missing.join(', ')}. Expected in $modelRoot',
+        'Missing Sherpa ONNX model files: ${modelStatus.missingFiles.join(', ')}. Expected in ${modelStatus.rootPath}',
       );
     }
+
+    final encoderPath = SherpaOnnxModelService.instance.filePathFor(
+      modelStatus.rootPath,
+      SherpaOnnxModelService.encoderFileName,
+    );
+    final decoderPath = SherpaOnnxModelService.instance.filePathFor(
+      modelStatus.rootPath,
+      SherpaOnnxModelService.decoderFileName,
+    );
+    final tokensPath = SherpaOnnxModelService.instance.filePathFor(
+      modelStatus.rootPath,
+      SherpaOnnxModelService.tokensFileName,
+    );
 
     final whisperConfig = sherpa.OfflineWhisperModelConfig(
       encoder: encoderPath,

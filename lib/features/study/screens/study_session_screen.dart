@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../settings/providers/settings_provider.dart';
 import '../providers/study_provider.dart';
 import 'session_result_screen.dart';
 
@@ -74,6 +75,7 @@ class _StudySessionScreenState extends ConsumerState<StudySessionScreen> {
 
   Future<void> _submitSession() async {
     setState(() => _isEvaluating = true);
+    final settings = ref.read(settingsProvider);
 
     try {
       final evaluation = await ref
@@ -82,7 +84,7 @@ class _StudySessionScreenState extends ConsumerState<StudySessionScreen> {
             bundleId: widget.bundle['id'],
             questions: _questions,
             userAnswers: _answers,
-            checkGrammar: true,
+            checkGrammar: settings.languageLearnerModeEnabled,
           );
 
       if (mounted) {

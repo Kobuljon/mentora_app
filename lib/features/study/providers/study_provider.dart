@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -216,12 +217,12 @@ class StudyNotifier extends StateNotifier<StudyState> {
               allGeneratedQuestions.addAll(batchQuestions);
               batchSuccess = true;
             } catch (e) {
-              print(
+              debugPrint(
                 'Batch $i on page ${batchEndPages[i]} attempt $attempt failed: $e',
               );
               if (attempt == 1) {
                 // Both attempts failed, skip this batch
-                print('Skipping batch $i after 2 failed attempts.');
+                debugPrint('Skipping batch $i after 2 failed attempts.');
               }
             }
           }

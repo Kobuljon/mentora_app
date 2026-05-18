@@ -25,6 +25,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.1"
+  audio_decoder:
+    dependency: "direct main"
+    description:
+      name: audio_decoder
+      sha256: "09f50218026e49e42e1eca56ea9d7f622b206b88fbceb7fd6dc40c9050ba95f1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.8.0"
   boolean_selector:
     dependency: transitive
     description:

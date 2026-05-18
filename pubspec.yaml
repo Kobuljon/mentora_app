@@ -77,6 +77,7 @@ dependencies:
   file_selector: ^1.1.0
   flutter_tts: ^4.2.5
   sherpa_onnx: ^1.13.2
+  audio_decoder: ^0.8.0
 
 dev_dependencies:
   flutter_test:
@@ -101,6 +102,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/
+    - assets/Test Materials/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

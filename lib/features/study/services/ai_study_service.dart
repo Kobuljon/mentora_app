@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 import '../../../core/services/cloud_ai_service.dart';
 import '../../../core/services/optimized_litert_engine_factory.dart';
@@ -26,27 +28,22 @@ class AiStudyService {
   }
 
   Future<List<String>> generateQuestions(String textContext, int count) async {
-    final systemInstruction =
-        "You are a helpful English teacher. Based only on the provided study text, generate exactly $count questions. "
-        "Questions must test understanding of the actual material, not generic English knowledge. "
-        "Use clear language for 12-16 year old learners.\n\n"
-        "=== REQUIRED OUTPUT FORMAT ===\n"
-        "Return ONLY a single JSON array of strings, wrapped exactly between the literal markers [[JSON_START]] and [[JSON_END]].\n"
-        "Rules (all are MANDATORY):\n"
-        "1. No prose, no commentary, no Markdown, no code fences before, between, or after the markers.\n"
-        "2. Use ONLY straight ASCII double quotes (\") for strings. Never use smart quotes (\u201C \u201D \u2018 \u2019).\n"
-        "3. Each question is one JSON string. No newlines, tabs, or control characters inside a string. Keep each question on one line.\n"
-        "4. Separate strings with a comma. No trailing comma before the closing ].\n"
-        "5. Produce exactly $count items \u2014 no more, no fewer.\n"
-        "6. Escape any internal double quotes as \\\".\n\n"
-        'Exact shape: [[JSON_START]]["Question 1?", "Question 2?"][[JSON_END]]';
+    final candidateCount = _candidateQuestionCount(count);
+    final systemInstruction = _buildQuestionGenerationInstruction(
+      requestedCount: count,
+      candidateCount: candidateCount,
+    );
+    final prompt = _buildQuestionGenerationPrompt(
+      textContext: textContext,
+      requestedCount: count,
+      candidateCount: candidateCount,
+    );
 
     if (_useCloudBackend) {
-      final responseText = await CloudAiService(_settings).generate(
-        systemInstruction: systemInstruction,
-        prompt: 'Text context: $textContext',
-      );
-      return _parseJsonArray(responseText);
+      final responseText = await CloudAiService(
+        _settings,
+      ).generate(systemInstruction: systemInstruction, prompt: prompt);
+      return _parseQuestionCandidates(responseText, textContext, count);
     }
 
     if (_engine == null) throw StateError('Not initialized');
@@ -60,15 +57,263 @@ class AiStudyService {
 
     try {
       var responseText = '';
-      await for (final chunk in conversation.sendMessageStream(
-        'Text context: $textContext',
-      )) {
+      await for (final chunk in conversation.sendMessageStream(prompt)) {
         responseText += chunk.text;
       }
-      return _parseJsonArray(responseText);
+      return _parseQuestionCandidates(responseText, textContext, count);
     } finally {
       await conversation.dispose();
     }
+  }
+
+  String _buildQuestionGenerationInstruction({
+    required int requestedCount,
+    required int candidateCount,
+  }) {
+    final quizModeGuidance = _settings.languageLearnerModeEnabled
+        ? '''
+Quiz mode: LANGUAGE LEARNER.
+Prioritize questions that help someone learn English from this material:
+- vocabulary meaning in context
+- useful grammar patterns from real sentences in the text
+- pronunciation, spelling, word form, or collocation only when the selected word/phrase is important in the material
+- comprehension questions when they help confirm the learner understood the language in context
+
+Good language-learning questions should still be grounded in the study text. Do not ask about a random word just because it appears once.
+'''
+        : '''
+Quiz mode: REGULAR LEARNER.
+Prioritize normal reading-comprehension questions:
+- events, facts, claims, causes, effects, motivations, sequence, comparison, and inference
+- key vocabulary only when the word is essential to understanding the material
+
+Do not make the quiz mainly about grammar, pronunciation, spelling, or isolated word analysis.
+''';
+
+    return '''
+You are a thoughtful middle-school English teacher creating a reading-comprehension quiz.
+
+Use ONLY the provided study text as the source. Ignore source labels, chunk labels, page labels, app instructions, JSON instructions, and formatting markers.
+
+Generate exactly $candidateCount candidate questions. The app will keep the strongest $requestedCount.
+
+$quizModeGuidance
+
+Good quiz questions MUST:
+- test comprehension of events, facts, claims, causes, effects, motivations, sequence, comparison, or inference from the study text
+- test important vocabulary from the study text when the word matters for understanding the material
+- be answerable from specific evidence in the study text
+- ask about meaningful ideas from the material, not random words
+- use clear language for 12-16 year old learners
+- be open-ended and answerable in 1-3 sentences
+
+Never generate:
+- questions about the function, role, or grammar job of a random isolated word or phrase
+- questions like "What is the function of the word X?" or "What role does the phrase X play?"
+- questions about "instruction", "JSON", "source", "chunk", "page number", or app/system prompt text
+- vocabulary questions about metadata, labels, formatting, or app/system instructions
+- generic questions such as "What is the main idea of the text?" unless they name a specific topic from the text
+- yes/no questions, true/false questions, multiple-choice questions, fill-in-the-blank questions, or grammar drills
+
+=== REQUIRED OUTPUT FORMAT ===
+Return ONLY a single JSON array of objects, wrapped exactly between the literal markers [[JSON_START]] and [[JSON_END]].
+Rules (all are MANDATORY):
+1. No prose, no commentary, no Markdown, no code fences before, between, or after the markers.
+2. Use ONLY straight ASCII double quotes (") for keys and string values. Never use smart quotes.
+3. Each object must have exactly these string keys: "question", "answerFocus", "evidence".
+4. "question" is the student-facing question. It must end with a question mark.
+5. "answerFocus" is a short phrase describing the expected answer.
+6. "evidence" is a short source phrase that proves the question came from the study text.
+7. No raw newlines, tabs, or control characters inside strings.
+8. Escape any internal double quotes as \\".
+9. No trailing commas before } or ].
+
+Exact shape:
+[[JSON_START]][{"question":"Why did the character make that choice?","answerFocus":"reason for the choice","evidence":"short phrase from the study text"}][[JSON_END]]
+''';
+  }
+
+  String _buildQuestionGenerationPrompt({
+    required String textContext,
+    required int requestedCount,
+    required int candidateCount,
+  }) {
+    return '''
+Create $candidateCount strong candidate quiz questions. I need $requestedCount final questions after quality filtering.
+
+Current quiz mode: ${_settings.languageLearnerModeEnabled ? 'language learner' : 'regular learner'}.
+
+Study text starts below. Treat bracketed source/page/chunk labels as metadata, not quiz content.
+
+[[STUDY_TEXT_START]]
+$textContext
+[[STUDY_TEXT_END]]
+''';
+  }
+
+  int _candidateQuestionCount(int requestedCount) {
+    return math.min(30, math.max(requestedCount + 3, requestedCount * 2));
+  }
+
+  List<String> _parseQuestionCandidates(
+    String responseText,
+    String sourceText,
+    int requestedCount,
+  ) {
+    final decoded = _parseJsonList(responseText);
+    final sourceTokens = _contentTokens(sourceText).toSet();
+    final questions = <String>[];
+    final seen = <String>{};
+
+    for (final item in decoded) {
+      final question = _questionTextFromCandidate(item);
+      if (question == null) continue;
+
+      final normalized = _normalizeQuestion(question);
+      if (isLowQualityGeneratedQuestion(normalized)) continue;
+      if (!_isGroundedInSource(normalized, sourceTokens)) continue;
+
+      final fingerprint = normalized
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+          .trim();
+      if (!seen.add(fingerprint)) continue;
+
+      questions.add(normalized);
+      if (questions.length == requestedCount) break;
+    }
+
+    if (questions.isEmpty) {
+      throw FormatException(
+        'Generated questions were not usable comprehension questions.',
+      );
+    }
+    return questions;
+  }
+
+  String? _questionTextFromCandidate(Object? item) {
+    if (item is String) return item;
+    if (item is Map) {
+      final question = item['question'] ?? item['Question'];
+      if (question != null) return question.toString();
+    }
+    return null;
+  }
+
+  String _normalizeQuestion(String question) {
+    final normalized = question
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'''^[\s"']+|[\s"']+$'''), '')
+        .trim();
+    if (normalized.endsWith('?')) return normalized;
+    return '$normalized?';
+  }
+
+  @visibleForTesting
+  static bool isLowQualityGeneratedQuestion(String question) {
+    final q = question.toLowerCase();
+    final wordCount = RegExp(r'\b[a-z]+\b').allMatches(q).length;
+    if (wordCount < 5) return true;
+
+    final bannedPatterns = [
+      RegExp(
+        r'\b(function|role|part of speech|grammatical role)\b.*\b(word|phrase|term)\b',
+      ),
+      RegExp(r'\bwhich word\b|\bwhat word\b'),
+      RegExp(
+        r'\b(fill in the blank|true or false|multiple choice|yes or no)\b',
+      ),
+      RegExp(
+        r'\b(instruction|json|system prompt|output format|json_start|json_end|chunk label|source label)\b',
+      ),
+      RegExp(r'\b(page number|chunk number)\b'),
+      RegExp(
+        r'\bwhat is the (main idea|purpose|topic|summary) of (the )?(text|passage|article|story)\b',
+      ),
+    ];
+
+    return bannedPatterns.any((pattern) => pattern.hasMatch(q));
+  }
+
+  bool _isGroundedInSource(String question, Set<String> sourceTokens) {
+    final questionTokens = _contentTokens(question).toSet()
+      ..removeAll(_questionOnlyTokens);
+    if (questionTokens.isEmpty) return false;
+
+    final overlap = questionTokens.where(sourceTokens.contains).length;
+    return overlap >= math.min(2, questionTokens.length);
+  }
+
+  static const _questionOnlyTokens = {
+    'what',
+    'when',
+    'where',
+    'why',
+    'how',
+    'which',
+    'who',
+    'whom',
+    'whose',
+    'describe',
+    'explain',
+    'compare',
+    'identify',
+    'according',
+    'text',
+    'passage',
+    'story',
+    'article',
+  };
+
+  Iterable<String> _contentTokens(String text) {
+    const stopWords = {
+      'about',
+      'after',
+      'again',
+      'also',
+      'because',
+      'before',
+      'being',
+      'could',
+      'from',
+      'have',
+      'into',
+      'more',
+      'most',
+      'only',
+      'over',
+      'that',
+      'their',
+      'them',
+      'then',
+      'there',
+      'these',
+      'they',
+      'this',
+      'those',
+      'through',
+      'under',
+      'were',
+      'what',
+      'when',
+      'where',
+      'which',
+      'while',
+      'with',
+      'would',
+      'your',
+      'source',
+      'page',
+      'chunk',
+      'training',
+      'data',
+    };
+
+    return RegExp(r'[a-zA-Z][a-zA-Z-]{2,}')
+        .allMatches(text.toLowerCase())
+        .map((match) => match.group(0)!.replaceAll('-', ''))
+        .where((token) => token.length >= 4)
+        .where((token) => !stopWords.contains(token));
   }
 
   Future<Map<String, dynamic>> evaluateAnswers(
@@ -131,7 +376,7 @@ class AiStudyService {
     return _parseJsonObject(responseText);
   }
 
-  List<String> _parseJsonArray(String text) {
+  List<Object?> _parseJsonList(String text) {
     final candidate = _extractJsonCandidate(
       text,
       openChar: '[',
@@ -142,7 +387,7 @@ class AiStudyService {
       try {
         final decoded = jsonDecode(attempt);
         if (decoded is List) {
-          return decoded.map((e) => e.toString()).toList();
+          return decoded.cast<Object?>();
         }
       } catch (_) {
         // try next attempt

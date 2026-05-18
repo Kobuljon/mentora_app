@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/brand_logo.dart';
+import '../services/local_test_materials_service.dart';
 import '../services/material_processor_service.dart';
 
 class ImportMaterialsScreen extends ConsumerStatefulWidget {
@@ -16,6 +17,7 @@ class ImportMaterialsScreen extends ConsumerStatefulWidget {
 
 class _ImportMaterialsScreenState extends ConsumerState<ImportMaterialsScreen> {
   bool _isImporting = false;
+  late final Future<List<LocalTestMaterialFile>> _localTestFilesFuture;
   String _importStatus = '';
   double _importProgress = 0.0;
 
@@ -25,6 +27,12 @@ class _ImportMaterialsScreenState extends ConsumerState<ImportMaterialsScreen> {
     _FormatSpec('Image', Icons.image_rounded, AppTheme.accent),
     _FormatSpec('Audio', Icons.audiotrack_rounded, AppTheme.primary),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _localTestFilesFuture = LocalTestMaterialsService.instance.listFiles();
+  }
 
   Future<void> _pickAndProcessFile() async {
     if (_isImporting) return;
@@ -48,7 +56,22 @@ class _ImportMaterialsScreenState extends ConsumerState<ImportMaterialsScreen> {
       return;
     }
 
-    final displayName = await _askForMaterialName(picked.name);
+    await _processSelectedFile(pickedPath, picked.name);
+  }
+
+  Future<void> _processLocalTestFile(LocalTestMaterialFile file) async {
+    if (_isImporting) return;
+
+    final tempPath = await LocalTestMaterialsService.instance
+        .materializeToTempFile(file);
+    if (!mounted) return;
+    await _processSelectedFile(tempPath, file.name);
+  }
+
+  Future<void> _processSelectedFile(String filePath, String fileName) async {
+    if (_isImporting) return;
+
+    final displayName = await _askForMaterialName(fileName);
     if (displayName == null || !mounted) return;
 
     await Future<void>.delayed(Duration.zero);
@@ -63,7 +86,7 @@ class _ImportMaterialsScreenState extends ConsumerState<ImportMaterialsScreen> {
     var importSucceeded = false;
     try {
       await MaterialProcessorService.instance.processFile(
-        pickedPath,
+        filePath,
         displayName: displayName,
         onProgress: (status, progress) {
           if (!mounted) return;
@@ -186,6 +209,11 @@ class _ImportMaterialsScreenState extends ConsumerState<ImportMaterialsScreen> {
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
+              ),
+              const SizedBox(height: 18),
+              _LocalTestFilesSection(
+                filesFuture: _localTestFilesFuture,
+                onImport: _processLocalTestFile,
               ),
               const SizedBox(height: 14),
               _TipCard(),
@@ -483,6 +511,162 @@ class _TipCard extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LocalTestFilesSection extends StatelessWidget {
+  const _LocalTestFilesSection({
+    required this.filesFuture,
+    required this.onImport,
+  });
+
+  final Future<List<LocalTestMaterialFile>> filesFuture;
+  final ValueChanged<LocalTestMaterialFile> onImport;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return FutureBuilder<List<LocalTestMaterialFile>>(
+      future: filesFuture,
+      builder: (context, snapshot) {
+        final files = snapshot.data ?? const <LocalTestMaterialFile>[];
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Local/TEST files',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Drop reusable test materials into the project folder ${LocalTestMaterialsService.folderPath} and they show up here after a restart.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (files.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: Text(
+                    'No local test files found yet.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  children: [
+                    for (int i = 0; i < files.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 10),
+                      _LocalTestFileTile(
+                        file: files[i],
+                        onImport: () => onImport(files[i]),
+                      ),
+                    ],
+                  ],
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LocalTestFileTile extends StatelessWidget {
+  const _LocalTestFileTile({required this.file, required this.onImport});
+
+  final LocalTestMaterialFile file;
+  final VoidCallback onImport;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final icon = switch (file.extension) {
+      '.pdf' => Icons.picture_as_pdf_rounded,
+      '.docx' => Icons.description_rounded,
+      '.jpg' || '.png' => Icons.image_rounded,
+      '.mp3' || '.m4a' || '.wav' => Icons.audiotrack_rounded,
+      _ => Icons.insert_drive_file_rounded,
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: scheme.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  file.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  file.typeLabel,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton.tonal(onPressed: onImport, child: const Text('Import')),
         ],
       ),
     );
